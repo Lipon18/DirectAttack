@@ -1,2 +1,2 @@
 # DirectAttack
-Direct Attack Game Engine
+A C++ game engine using Vulkan.
