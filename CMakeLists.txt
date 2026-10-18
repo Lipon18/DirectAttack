@@ -2,20 +2,23 @@
 cmake_minimum_required(VERSION  4.3.4 FATAL_ERROR)
 cmake_policy(VERSION  4.3.4)
 set(PROJECT_NAME DirectAttack)
-project(${PROJECT_NAME} VERSION 0.1.0 LANGUAGE CXX)
+project(${PROJECT_NAME} VERSION 0.1.0 LANGUAGES CXX)
 
 # c++ compiler configuration
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
 # Hangar: fetch / install external dependencies
 find_program(HANGAR_EXE NAMES hangar REQUIRED)
 
 execute_process(
     COMMAND "${HANGAR_EXE}" install
-        --manifest "${CMAKE_SOURCE_DIR}/hangar.toml"
-        --profile "${CMAKE_SOURCE_DIR}/profiles/windows-msvc.toml"
+        --manifest "${CMAKE_SOURCE_DIR}/tools/hangar.toml"
+        --profile "${CMAKE_SOURCE_DIR}/profiles/windows-msvc-debug.toml"
+        --profile "${CMAKE_SOURCE_DIR}/profiles/windows-msvc-release.toml"
         --cmake-out "${CMAKE_BINARY_DIR}/hangar.cmake"
     RESULT_VARIABLE HANGAR_RESULT
 )
@@ -28,7 +31,7 @@ include("${CMAKE_BINARY_DIR}/hangar.cmake")
 find_package(Vulkan REQUIRED)
 
 # glfw
-find_package(glfw3 3.5 CONFIG REQURIED)
+find_package(glfw3 3.5 CONFIG REQUIRED)
 
 add_executable(${PROJECT_NAME} src/main.cpp)
 

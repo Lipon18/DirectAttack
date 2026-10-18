@@ -1,8 +1,8 @@
 [profile]
-name = "windows-msvc"
+name = "windows-msvc-release"
 os = "windows"
 compiler = "msvc2022"
-build_type = "Release"
+build_types = ["Release"]
 generator = "Visual Studio 17 2022"
 arch = "x64"
 dependencies_dir = "C:/hangar"
