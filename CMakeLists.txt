@@ -27,26 +27,11 @@ if(NOT HANGAR_RESULT EQUAL 0)
 endif()
 include("${CMAKE_BINARY_DIR}/hangar.cmake")
 
-# Vulkan SDK
 find_package(Vulkan REQUIRED)
-
-# glfw
 find_package(glfw3 3.5 CONFIG REQUIRED)
-
-add_executable(${PROJECT_NAME} src/main.cpp)
 
 # CMake helpers
 include("${CMAKE_SOURCE_DIR}/CMAKE/CMakeHelpers.cmake")
 
-target_link_libraries(${PROJECT_NAME} PRIVATE
-    Vulkan::Vulkan
-    glfw
-)
-
-target_compile_definitions(${PROJECT_NAME} PRIVATE
-    GLFW_INCLUDE_VULKAN
-)
-
-target_compile_options(${PROJECT_NAME} PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/W4>
-)
+# project directories
+add_subdirectory(engine)
