@@ -73,6 +73,12 @@ function(add_clang_format_target)
         return()
     endif()
 
+    #add_custom_target(ClangFormat
+        #COMMAND python "${CMAKE_SOURCE_DIR}/Automation/Automation.py" clang_format
+        #COMMET "Running clang-format on engine, editor and testbed sources"
+        #VERBATIM
+    #)
+
     get_property(FORMAT_FILES GLOBAL PROPERTY CLANG_FORMAT_FILES)
     list(FILTER FORMAT_FILES INCLUDE REGEX "\\.(h|hpp|inl|cpp|c)$")
     list(REMOVE_DUPLICATES FORMAT_FILES)
@@ -90,18 +96,32 @@ function(add_clang_format_target)
     set_target_properties(ClangFormat PROPERTIES FOLDER "_CMake")
 endfunction()
 
+# Copy a runtime DLL next to an executable after building it.
 function(copy_runtime_dll TARGET DLL)
-
     add_custom_command(TARGET ${TARGET} POST_BUILD
-
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${DLL}"
-        "$<TARGET_FILE_DIR:${TARGET}>"
-
-    COMMENT
-        "Copying runtime DLL: ${DLL}"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${DLL}"
+            "$<TARGET_FILE_DIR:${TARGET}>"
+        COMMENT "Copying runtime DLL: ${DLL}"
+        VERBATIM
     )
-    
+endfunction()
+
+# Copy the SDL runtime dependencies next to an executable.
+function(copy_sdl_runtime TARGET)
+    if(NOT TARGET "${TARGET}")
+        message(FATAL_ERROR "copy_sdl_runtime: target '${TARGET}' does not exist")
+    endif()
+    if(NOT TARGET SDL3::SDL3)
+        message(FATAL_ERROR "SDL3::SDL3 target was not found")
+    endif()
+
+    if(NOT TARGET SDL3_mixer::SDL3_mixer)
+        message(FATAL_ERROR "SDL3_mixer::SDL3_mixer target was not found")
+    endif()
+
+    copy_runtime_dll("${TARGET}" "$<TARGET_FILE:SDL3::SDL3>")
+    copy_runtime_dll("${TARGET}" "$<TARGET_FILE:SDL3_mixer::SDL3_mixer>")
 endfunction()
 
 # Put CMake generated targets into their own folder

@@ -1,0 +1,53 @@
+BasedOnStyle: Microsoft
+Language: Cpp
+Standard: Latest
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+NamespaceIndentation: All
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: Never
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: true
+  BeforeCatch: false
+  BeforeElse: false
+  BeforeWhile: false
+  IndentBraces: false
+  SplitEmptyFunction: false
+  SplitEmptyRecord: false
+  SplitEmptyNamespace: false
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortLambdasOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: WithoutElse
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+SpaceBeforeParens: ControlStatements
+SpaceInEmptyParentheses: false
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceBeforeAssignmentOperators: true
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+AccessModifierOffset: -4
+EmptyLineAfterAccessModifier: Never
+EmptyLineBeforeAccessModifier: LogicalBlock
+ColumnLimit: 120
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+BinPackArguments: true
+BinPackParameters: true
+Cpp11BracedListStyle: true
+SpaceBeforeCpp11BracedList: false
+SpacesInContainerLiterals: false
+SortIncludes: Never
+IncludeBlocks: Preserve
+ReflowComments: true
+InsertNewlineAtEOF: true
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+FixNamespaceComments: true

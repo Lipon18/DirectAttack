@@ -1,6 +1,5 @@
 # project info
 cmake_minimum_required(VERSION  4.3.4 FATAL_ERROR)
-cmake_policy(VERSION  4.3.4)
 set(PROJECT_NAME DirectAttack)
 project(${PROJECT_NAME} VERSION 0.1.0 LANGUAGES CXX)
 
@@ -25,8 +24,10 @@ execute_process(
 if(NOT HANGAR_RESULT EQUAL 0)
     message(FATAL_ERROR "hangar install failed")
 endif()
+
 include("${CMAKE_BINARY_DIR}/hangar.cmake")
 
+# dependencies
 find_package(Vulkan REQUIRED)
 find_package(glfw3 3.5 CONFIG REQUIRED)
 

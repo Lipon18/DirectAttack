@@ -4,6 +4,7 @@ collect_sources(ENGINE_SOURCE_FILES DIRS src)
 add_library(DirectAttack STATIC ${ENGINE_SOURCE_FILES})
 
 create_ide_folders(ENGINE_SOURCE_FILES)
+register_clang_format(ENGINE_SOURCE_FILES)
 
 # source directory
 target_include_directories(DirectAttack PUBLIC 
@@ -13,7 +14,7 @@ target_include_directories(DirectAttack PUBLIC
 # dependencies
 target_link_libraries(DirectAttack PUBLIC
     Vulkan::Vulkan    
-    glfw3::glfw3
+    glfw
 )
 
 target_compile_definitions(DirectAttack PRIVATE
