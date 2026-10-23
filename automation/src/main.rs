@@ -30,13 +30,13 @@ struct Config {
 }
 
 const CONFIG: Config = Config {
-    build_folder: "build", // Isolated nested subfolder
+    build_folder: "Build", // Isolated nested subfolder
     cmake_generator: "Visual Studio 17 2022",
     platform: "x64",
     fresh: true,
     clean_first: true,
     verbose: false,
-    source_dirs: &["src"],
+    source_dirs: &["Engine/Source", "Testbed/Source"],
 };
 
 fn remove_build_folder() -> bool {

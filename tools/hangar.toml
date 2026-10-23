@@ -16,3 +16,34 @@ options = [
     "GLFW_USE_HYBRID_HPG=OFF",
     "USE_MSVC_RUNTIME_LIBRARY_DLL=ON"
 ]
+
+[dependencies.spdlog]
+git = "https://github.com/gabime/spdlog.git"
+tag = "v1.17.0"
+options = [
+    "SPDLOG_BUILD_SHARED=OFF",
+    "SPDLOG_BUILD_EXAMPLE=OFF",
+    "SPDLOG_BUILD_EXAMPLE_HO=OFF",
+    "SPDLOG_BUILD_TESTS=OFF",
+    "SPDLOG_BUILD_TESTS_HO=OFF",
+    "SPDLOG_BUILD_BENCH=OFF",
+    "SPDLOG_BUILD_ALL=OFF",
+    "SPDLOG_INSTALL=ON",
+    "SPDLOG_TIDY=OFF",
+    "SPDLOG_SANITIZE_ADDRESS=OFF",
+    "SPDLOG_SANITIZE_THREAD=OFF",
+    "SPDLOG_BUILD_WARNINGS=OFF",
+    "CMAKE_CXX_STANDARD=20",
+]
+
+[dependencies.googletest]
+git = "https://github.com/google/googletest.git"
+tag = "v1.18.0"
+options = [
+    "BUILD_GMOCK=OFF",
+    "INSTALL_GTEST=ON",
+    "gtest_build_tests=OFF",
+    "gtest_build_samples=OFF",
+    "gtest_force_shared_crt=ON",
+    "CMAKE_CXX_STANDARD=20"
+]
