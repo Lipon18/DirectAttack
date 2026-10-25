@@ -18,6 +18,9 @@ namespace DA {
     class VulkanInstance;
     class VulkanSurface;
     class VulkanPhysicalDevice;
+    class VulkanDevice;
+    class VulkanSwapchain;
+    class VulkanRenderer;
 
     class DA_API Engine {
     public:
@@ -50,6 +53,9 @@ namespace DA {
         std::unique_ptr<VulkanInstance> m_vkInstance;
         std::unique_ptr<VulkanSurface> m_vkSurface;
         std::unique_ptr<VulkanPhysicalDevice> m_vkPhysicalDevice;
+        std::unique_ptr<VulkanDevice> m_vkDevice;
+        std::unique_ptr<VulkanSwapchain> m_vkSwapchain;
+        std::unique_ptr<VulkanRenderer> m_renderer;
         std::unique_ptr<Application> m_app;
         bool m_running = false;
         bool m_initialized = false;

@@ -31,7 +31,11 @@ namespace DA {
     } // namespace
 
     void Log::Initialize() {
-        auto& logger = InternalLogger();
+        auto consoleSink = std::make_shared<spdlog::sinks::stdout_color_sink_mt>();
+        auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("Logs/DirectAttack.log", true);
+        Initialize({consoleSink, fileSink});
+
+       /* auto& logger = InternalLogger();
         if (logger) return;
 
         try {
@@ -50,7 +54,7 @@ namespace DA {
             DA_INFO("DirectAttack Initialized.");
         } catch (const spdlog::spdlog_ex& ex) {
             std::cerr << "Failed to initialize DirectAttack Logger: " << ex.what() << '\n';
-        }
+        }*/
     }
 
     void Log::Shutdown() {
@@ -72,5 +76,19 @@ namespace DA {
             logger->flush();
         }
     }
+    void Log::Initialize(const std::vector<spdlog::sink_ptr>& customSinks) {
+        auto& logger = InternalLogger();
+        if (logger) return;
 
+        try {
+            logger = std::make_shared<spdlog::logger>("DirectAttack", customSinks.begin(), customSinks.end());
+            logger->set_level(spdlog::level::trace);
+            logger->set_pattern("[%d.%m.%Y][%^%l%$][%v"); // Match your pattern
+            logger->flush_on(spdlog::level::warn);
+
+            spdlog::register_logger(logger);
+        } catch (const spdlog::spdlog_ex& ex) {
+            std::cerr << "Failed to initialize DirectAttack Logger: " << ex.what() << '\n';
+        }
+    }
 } // namespace DA

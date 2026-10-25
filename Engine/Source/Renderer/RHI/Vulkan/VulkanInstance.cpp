@@ -1,6 +1,5 @@
 #include "PCH.h"
 #include "VulkanInstance.h"
-#include <Core/Log.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -13,7 +12,7 @@ namespace DA {
                                                      const VkDebugUtilsMessengerCallbackDataEXT* data, void* /*user*/) {
             if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT) {
                 DA_ERROR("[Vulkan] {}", data->pMessage);
-            } else if (severity && VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
+            } else if (severity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT) {
                 DA_WARN("[Vulkan] {}", data->pMessage);
             } else {
                 DA_INFO("[Vulkan] {}", data->pMessage);
@@ -75,54 +74,63 @@ namespace DA {
         vkEnumerateInstanceExtensionProperties(nullptr, &extCount, available.data());
 
         std::vector<const char*> extensions = desc.RequiredExtensions;
+        if (extensions.empty()) {
+            DA_FATAL("No window-system instance extensions were supplied (is GLFW initialized?).");
+            return false;
+        }
         for (const char* ext : extensions) {
             if (!HasExtension(available, ext)) {
                 DA_FATAL("Required Vulkan instance extension missing: {}", ext);
                 return false;
             }
         }
+
         if (m_validationEnabled) {
             if (HasExtension(available, VK_EXT_DEBUG_UTILS_EXTENSION_NAME)) {
                 extensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
             } else {
-                DA_WARN("{} not available, disabling, validation.", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-                m_validationEnabled = true;
+                DA_WARN("{} not available, disabling validation.", VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
+                m_validationEnabled = false;
             }
+        } // <-- this brace was missing
 
-            VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
-            appInfo.pApplicationName = desc.AppName.c_str();
-            appInfo.applicationVersion = desc.AppVersion;
-            appInfo.pEngineName = "DirectAttack";
-            appInfo.engineVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
-            appInfo.apiVersion = m_apiVersion;
+        for (const char* e : extensions)
+            DA_INFO("Instance extension: {}", e);
 
-            VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-            createInfo.pApplicationInfo = &appInfo;
-            createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
-            createInfo.ppEnabledExtensionNames = extensions.data();
+        VkApplicationInfo appInfo{VK_STRUCTURE_TYPE_APPLICATION_INFO};
+        appInfo.pApplicationName = desc.AppName.c_str();
+        appInfo.applicationVersion = desc.AppVersion;
+        appInfo.pEngineName = "DirectAttack";
+        appInfo.engineVersion = VK_MAKE_API_VERSION(0, 0, 1, 0);
+        appInfo.apiVersion = m_apiVersion;
 
-            VkDebugUtilsMessengerCreateInfoEXT messengerInfo = MakeMessengerInfo();
-            if (m_validationEnabled) {
-                createInfo.enabledLayerCount = 1;
-                createInfo.ppEnabledLayerNames = &ValidationLayerName;
-                createInfo.pNext = &messengerInfo;
-            }
-            if (VkResult r = vkCreateInstance(&createInfo, nullptr, &m_instance); r != VK_SUCCESS) {
-                DA_FATAL("vkCreateInstance failed: {}", string_VkResult(r));
-                return false;
-            }
+        VkInstanceCreateInfo createInfo{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
+        createInfo.pApplicationInfo = &appInfo;
+        createInfo.enabledExtensionCount = static_cast<uint32_t>(extensions.size());
+        createInfo.ppEnabledExtensionNames = extensions.data();
 
-            if (m_validationEnabled) {
-                auto createFn = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
-                    vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
-                if (!createFn || createFn(m_instance, &messengerInfo, nullptr, &m_debugMessenger) != VK_SUCCESS) {
-                    DA_WARN("Failed to create the Vulkan debug messenger.");
-                }
-            }
-            DA_INFO("Vulkan instance created (API {}.{}, validation {}).", VK_API_VERSION_MAJOR(m_apiVersion),
-                    VK_API_VERSION_MINOR(m_apiVersion), m_validationEnabled ? "on" : "off");
-            return true;
+        VkDebugUtilsMessengerCreateInfoEXT messengerInfo = MakeMessengerInfo();
+        if (m_validationEnabled) {
+            createInfo.enabledLayerCount = 1;
+            createInfo.ppEnabledLayerNames = &ValidationLayerName;
+            createInfo.pNext = &messengerInfo;
         }
+        if (VkResult r = vkCreateInstance(&createInfo, nullptr, &m_instance); r != VK_SUCCESS) {
+            DA_FATAL("vkCreateInstance failed: {}", string_VkResult(r));
+            return false;
+        }
+
+        if (m_validationEnabled) {
+            auto createFn = reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(
+                vkGetInstanceProcAddr(m_instance, "vkCreateDebugUtilsMessengerEXT"));
+            if (!createFn || createFn(m_instance, &messengerInfo, nullptr, &m_debugMessenger) != VK_SUCCESS) {
+                DA_WARN("Failed to create the Vulkan debug messenger.");
+            }
+        }
+
+        DA_INFO("Vulkan instance created (API {}.{}, validation {}).", VK_API_VERSION_MAJOR(m_apiVersion),
+                VK_API_VERSION_MINOR(m_apiVersion), m_validationEnabled ? "on" : "off");
+        return true;
     }
 
     VulkanInstance::~VulkanInstance() {

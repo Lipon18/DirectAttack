@@ -1,11 +1,17 @@
 #include "PCH.h"
 #include "Engine.h"
 #include "Application.h"
+#include "Paths.h"
 #include "Log.h"
 #include <Platform/Window.h>
 #include <Renderer/RHI/Vulkan/VulkanInstance.h>
 #include <Renderer/RHI/Vulkan/VulkanSurface.h>
 #include <Renderer/RHI/Vulkan/VulkanPhysicalDevice.h>
+#include <Renderer/RHI/Vulkan/VulkanDevice.h>
+#include <Renderer/RHI/Vulkan/VulkanSwapchain.h>
+#include <Renderer/RHI/Vulkan/VulkanRenderer.h>
+
+#include <vulkan/vulkan.h>
 
 #include "Core/EngineConfig.h"
 
@@ -33,6 +39,8 @@ namespace DA {
         }
         m_app = std::move(app);
         const auto& config = m_app->GetConfig();
+
+        Paths::Init(DA_ENGINE_CONTENT_DIR);
 
         DA_INFO("{} Engine v{}", Config::EngineName, Config::Version);
 
@@ -86,6 +94,16 @@ namespace DA {
             return false;
         }
 
+        m_vkDevice = VulkanDevice::Create(*m_vkInstance, *m_vkPhysicalDevice);
+        if (!m_vkDevice) return false;
+
+        m_vkSwapchain = VulkanSwapchain::Create(*m_vkDevice, *m_vkPhysicalDevice, *m_vkSurface, m_window->GetWidth(),
+                                                m_window->GetHeight());
+        if (!m_vkSwapchain) return false;
+
+        m_renderer = VulkanRenderer::Create(*m_vkDevice, *m_vkSwapchain);
+        if (!m_renderer) return false; 
+
         if (!m_app->OnInit()) {
             DA_ERROR("Application initialization failed.");
             m_app.reset();
@@ -115,7 +133,12 @@ namespace DA {
             const float deltaSeconds = std::chrono::duration<float>(now - lastFrame).count();
             lastFrame = now;
             m_app->OnUpdate(deltaSeconds);
+
+            if (!m_renderer->RenderFrame(m_window->GetWidth(), m_window->GetHeight())) {
+                RequestClose();
+            }
         }
+        m_vkDevice->WaitIdle(); // GPU must finish before the app and Vulkan objects are torn down
         if (m_app && !m_app->m_shutdownCalled) {
             m_app->OnShutdown();
             m_app->m_shutdownCalled = true;

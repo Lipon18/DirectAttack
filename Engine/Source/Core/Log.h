@@ -10,8 +10,11 @@
 
 #include "DA_API.h"
 #include <spdlog/fmt/fmt.h>
+#include <spdlog/spdlog.h>
+
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace DA {
     enum class ELogLevel : unsigned char {
@@ -29,6 +32,7 @@ namespace DA {
         static void Shutdown();
 
         static void Write(ELogLevel level, std::string_view category, std::string_view message);
+        static void Initialize(const std::vector<spdlog::sink_ptr>& customSinks);
 
         template <typename... Args>
         static void Print(ELogLevel level, std::string_view category, fmt::format_string<Args...> format,

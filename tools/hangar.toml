@@ -47,3 +47,8 @@ options = [
     "gtest_force_shared_crt=ON",
     "CMAKE_CXX_STANDARD=20"
 ]
+
+[dependencies.vma]
+git = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git"
+tag = "v3.4.0"
+headers = ["include"]
