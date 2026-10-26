@@ -26,9 +26,18 @@ namespace DA {
     }
 
     std::string Paths::Combine(const fs::path& root, const std::string& relativePath) {
-        fs::path rel{relativePath};
+        /*fs::path rel{relativePath};
         if (rel.has_root_name()) return rel.generic_string();
         if (rel.has_root_directory()) rel = rel.relative_path();
+        return (root / rel).lexically_normal().generic_string();*/
+
+        fs::path rel{relativePath};
+        if (rel.is_absolute() || rel.has_root_name()) {
+            return rel.generic_string();
+        }
+        if (rel.has_root_directory()) {
+            rel = rel.relative_path();
+        }
         return (root / rel).lexically_normal().generic_string();
     }
 } // namespace DA

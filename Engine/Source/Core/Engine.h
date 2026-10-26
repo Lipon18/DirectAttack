@@ -21,6 +21,7 @@ namespace DA {
     class VulkanDevice;
     class VulkanSwapchain;
     class VulkanRenderer;
+    class VulkanAllocator;
 
     class DA_API Engine {
     public:
@@ -54,6 +55,7 @@ namespace DA {
         std::unique_ptr<VulkanSurface> m_vkSurface;
         std::unique_ptr<VulkanPhysicalDevice> m_vkPhysicalDevice;
         std::unique_ptr<VulkanDevice> m_vkDevice;
+        std::unique_ptr<VulkanAllocator> m_vkAllocator;
         std::unique_ptr<VulkanSwapchain> m_vkSwapchain;
         std::unique_ptr<VulkanRenderer> m_renderer;
         std::unique_ptr<Application> m_app;

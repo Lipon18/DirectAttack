@@ -1,10 +1,14 @@
 #pragma once
 
 #include <Core/DA_API.h>
+#include <Core/Time/Clock.h>
+#include "VulkanBuffer.h"
 #include "VulkanCommandBuffer.h"
 #include "VulkanCommandPool.h"
-#include "VulkanSync.h"
+#include "VulkanDescriptors.h"
 #include "VulkanGraphicsPipeline.h"
+#include "VulkanImage.h"
+#include "VulkanSync.h"
 
 #include <vulkan/vulkan.h>
 
@@ -14,6 +18,7 @@
 #include <vector>
 
 namespace DA {
+    class VulkanAllocator;
     class VulkanDevice;
     class VulkanSwapchain;
 
@@ -23,7 +28,7 @@ namespace DA {
         static constexpr uint32_t FramesInFlight = 2;
 
         // The device and swapchain must outlive the renderer (declare the renderer after them).
-        static std::unique_ptr<VulkanRenderer> Create(const VulkanDevice& device, VulkanSwapchain& swapchain);
+        static std::unique_ptr<VulkanRenderer> Create(const VulkanDevice& device, const VulkanAllocator& allocator, VulkanSwapchain& swapchain);
         ~VulkanRenderer();
 
         VulkanRenderer(const VulkanRenderer&) = delete;
@@ -42,10 +47,12 @@ namespace DA {
             std::unique_ptr<VulkanCommandBuffer> Cmd;
             std::unique_ptr<VulkanSemaphore> ImageAvailable;
             std::unique_ptr<VulkanFence> InFlight;
+            std::unique_ptr<VulkanBuffer> Uniform;
+            VkDescriptorSet Set = VK_NULL_HANDLE;
         };
 
-        VulkanRenderer(const VulkanDevice& device, VulkanSwapchain& swapchain)
-            : m_device(device), m_swapchain(swapchain) {}
+        VulkanRenderer(const VulkanDevice& device, const VulkanAllocator& allocator, VulkanSwapchain& swapchain)
+            : m_device(device), m_allocator(allocator), m_swapchain(swapchain) {}
 
         bool Init();
         bool CreateRenderFinishedSemaphores();
@@ -53,6 +60,7 @@ namespace DA {
         void Record(VkCommandBuffer cmd, uint32_t imageIndex);
 
         const VulkanDevice& m_device;
+        const VulkanAllocator& m_allocator;
         VulkanSwapchain& m_swapchain;
 
         std::array<Frame, FramesInFlight> m_frames;
@@ -65,6 +73,13 @@ namespace DA {
 
         std::array<float, 4> m_clearColor = {1.0f, 0.0f, 0.0f, 1.0f};
 
-        std::unique_ptr<VulkanGraphicsPipeline> m_trianglePipeline;
+        std::unique_ptr<VulkanImage> m_texture;
+        std::unique_ptr<VulkanSampler> m_sampler;
+        std::unique_ptr<VulkanDescriptorSetLayout> m_setLayout;
+        std::unique_ptr<VulkanDescriptorPool> m_descriptorPool;
+        std::unique_ptr<VulkanGraphicsPipeline> m_quadPipeline;
+        std::unique_ptr<VulkanBuffer> m_vertexBuffer;
+        std::unique_ptr<VulkanBuffer> m_indexBuffer;
+        Clock m_clock;
     };
 } // namespace DA

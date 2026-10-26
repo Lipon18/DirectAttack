@@ -64,6 +64,8 @@ namespace DA {
         vkGetDeviceQueue(m_device, m_presentFamily, 0, &m_presentQueue);
         DA_INFO("Vulkan device created (graphics family {}, present family {}, anisotropy {}).", m_graphicsFamily,
                 m_presentFamily, enabled.features.samplerAnisotropy ? "on" : "off");
+        m_anisotropyEnabled = enabled.features.samplerAnisotropy == VK_TRUE;
+        m_maxAnisotropy = physicalDevice.GetProperties().limits.maxSamplerAnisotropy;
         return true;
     }
 

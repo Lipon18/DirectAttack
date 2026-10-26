@@ -66,6 +66,8 @@ target_link_libraries(DirectAttack PUBLIC
     glfw
     spdlog::spdlog
     hangar::vma
+    PRIVATE
+        hangar::stb_image
 )
 
 target_compile_definitions(DirectAttack

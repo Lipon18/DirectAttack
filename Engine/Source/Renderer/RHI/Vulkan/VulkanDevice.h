@@ -31,9 +31,15 @@ namespace DA {
         // Blocks until the GPU has finished all submitted work.
         void WaitIdle() const;
 
+        bool IsAnisotropyEnabled() const { return m_anisotropyEnabled; }
+        float GetMaxSamplerAnisotropy() const { return m_maxAnisotropy; }
+
     private:
         VulkanDevice() = default;
         bool Init(const VulkanPhysicalDevice& physicalDevice);
+
+        bool m_anisotropyEnabled = false;
+        float m_maxAnisotropy = 1.0f;
 
         VkDevice m_device = VK_NULL_HANDLE;
         VkQueue m_graphicsQueue = VK_NULL_HANDLE;

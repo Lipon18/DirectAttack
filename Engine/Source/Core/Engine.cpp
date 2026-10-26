@@ -10,6 +10,7 @@
 #include <Renderer/RHI/Vulkan/VulkanDevice.h>
 #include <Renderer/RHI/Vulkan/VulkanSwapchain.h>
 #include <Renderer/RHI/Vulkan/VulkanRenderer.h>
+#include <Renderer/RHI/Vulkan/VulkanAllocator.h>
 
 #include <vulkan/vulkan.h>
 
@@ -97,11 +98,14 @@ namespace DA {
         m_vkDevice = VulkanDevice::Create(*m_vkInstance, *m_vkPhysicalDevice);
         if (!m_vkDevice) return false;
 
+        m_vkAllocator = VulkanAllocator::Create(*m_vkInstance, *m_vkPhysicalDevice, *m_vkDevice);
+        if (!m_vkAllocator) return false;
+
         m_vkSwapchain = VulkanSwapchain::Create(*m_vkDevice, *m_vkPhysicalDevice, *m_vkSurface, m_window->GetWidth(),
                                                 m_window->GetHeight());
         if (!m_vkSwapchain) return false;
 
-        m_renderer = VulkanRenderer::Create(*m_vkDevice, *m_vkSwapchain);
+        m_renderer = VulkanRenderer::Create(*m_vkDevice, *m_vkAllocator, *m_vkSwapchain);
         if (!m_renderer) return false; 
 
         if (!m_app->OnInit()) {

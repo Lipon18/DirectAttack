@@ -52,3 +52,8 @@ options = [
 git = "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator.git"
 tag = "v3.4.0"
 headers = ["include"]
+
+[dependencies.stb_image]
+git = "https://github.com/nothings/stb.git"
+tag = "master"
+headers = ["."]
