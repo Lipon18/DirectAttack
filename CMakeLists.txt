@@ -12,10 +12,22 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set_property(GLOBAL PROPERTY PREDEFINED_TARGETS_FOLDER "_CMake")
 
-# Output directories.
-set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
-set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/lib")
+# Output directories
+#
+# Runtime outputs: executables and DLLs.
+# Archive outputs: static libraries and Windows import libraries.
+# Keep Debug and Release outputs separate for multi-config generators.
+set(DA_BUILD_DIR "${CMAKE_BINARY_DIR}")
+set(DA_BIN_DIR "${DA_BUILD_DIR}/bin/$<CONFIG>")
+set(DA_LIB_DIR "${DA_BUILD_DIR}/lib/$<CONFIG>")
+set(DA_GENERATED_DIR "${DA_BUILD_DIR}/generated")
+
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${DA_BIN_DIR}")
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${DA_BIN_DIR}")
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${DA_LIB_DIR}")
+
+# Keep generated headers out of the source tree.
+file(MAKE_DIRECTORY "${DA_GENERATED_DIR}")
 
 # CMake helpers.
 include("${CMAKE_SOURCE_DIR}/CMAKE/CMakeHelpers.cmake")
@@ -43,12 +55,11 @@ find_package(glfw3 3.5 CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(GTest CONFIG REQUIRED)
 
-# project directories
-add_subdirectory(Engine)
-add_subdirectory(Testbed)
-enable_testing()
 include(GoogleTest)
-add_subdirectory(Tests/DirectAttackTests)
+
+# project directories
+add_subdirectory(DA)
+enable_testing()
 
 # Visual Studio startup project.
 set_property(

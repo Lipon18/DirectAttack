@@ -72,3 +72,6 @@ Testing/
 automation/target/
 
 *.spv
+
+.DS_Store
+Thumbs.db
