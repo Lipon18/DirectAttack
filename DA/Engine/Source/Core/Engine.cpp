@@ -4,13 +4,13 @@
 #include "Paths.h"
 #include "Log.h"
 #include <Platform/Window.h>
-#include <Renderer/RHI/Vulkan/VulkanInstance.h>
-#include <Renderer/RHI/Vulkan/VulkanSurface.h>
-#include <Renderer/RHI/Vulkan/VulkanPhysicalDevice.h>
-#include <Renderer/RHI/Vulkan/VulkanDevice.h>
-#include <Renderer/RHI/Vulkan/VulkanSwapchain.h>
-#include <Renderer/RHI/Vulkan/VulkanRenderer.h>
-#include <Renderer/RHI/Vulkan/VulkanAllocator.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanInstance.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanSurface.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanPhysicalDevice.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
+#include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
+#include <Renderer/VulkanRenderer.h>
+#include <Renderer/RHI/Vulkan/Memory/VulkanAllocator.h>
 
 #include <vulkan/vulkan.h>
 

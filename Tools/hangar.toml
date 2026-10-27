@@ -17,6 +17,13 @@ options = [
     "USE_MSVC_RUNTIME_LIBRARY_DLL=ON"
 ]
 
+# glm
+[dependencies.glm]
+git = "https://github.com/g-truc/glm.git"
+tag = "1.0.3"
+headers = ["glm"]
+
+
 [dependencies.spdlog]
 git = "https://github.com/gabime/spdlog.git"
 tag = "v1.17.0"

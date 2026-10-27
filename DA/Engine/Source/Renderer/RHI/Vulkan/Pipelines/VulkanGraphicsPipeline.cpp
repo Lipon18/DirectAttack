@@ -1,7 +1,7 @@
 #include "PCH.h"
 #include "VulkanGraphicsPipeline.h"
-#include "VulkanDevice.h"
-#include "VulkanShaderModule.h"
+#include "Renderer/RHI/Vulkan/Core/VulkanDevice.h"
+#include <Renderer/RHI/Vulkan/Resources/VulkanShaderModule.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -94,10 +94,16 @@ namespace DA {
         dynamic.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size());
         dynamic.pDynamicStates = dynamicStates.data();
 
+        VkPipelineDepthStencilStateCreateInfo depthStencil{VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO};
+        depthStencil.depthTestEnable = desc.DepthTest ? VK_TRUE : VK_FALSE;
+        depthStencil.depthWriteEnable = desc.DepthWrite ? VK_TRUE : VK_FALSE;
+        depthStencil.depthCompareOp = VK_COMPARE_OP_LESS;
+
         // Dynamic rendering: attachment formats go here, not in a render pass.
         VkPipelineRenderingCreateInfo rendering{VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO};
         rendering.colorAttachmentCount = 1;
         rendering.pColorAttachmentFormats = &desc.ColorFormat;
+        rendering.depthAttachmentFormat = desc.DepthFormat;
 
         VkGraphicsPipelineCreateInfo info{VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO};
         info.pNext = &rendering;
@@ -109,6 +115,7 @@ namespace DA {
         info.pRasterizationState = &raster;
         info.pMultisampleState = &multisample;
         info.pColorBlendState = &blend;
+        if (desc.DepthFormat != VK_FORMAT_UNDEFINED) info.pDepthStencilState = &depthStencil;
         info.pDynamicState = &dynamic;
         info.layout = m_layout;
         info.renderPass = VK_NULL_HANDLE;

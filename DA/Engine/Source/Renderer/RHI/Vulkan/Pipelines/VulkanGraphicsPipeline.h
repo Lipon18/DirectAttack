@@ -22,7 +22,10 @@ namespace DA {
         VkPolygonMode PolygonMode = VK_POLYGON_MODE_FILL;
         VkCullModeFlags CullMode = VK_CULL_MODE_BACK_BIT;
         VkFrontFace FrontFace = VK_FRONT_FACE_CLOCKWISE;
+        VkFormat DepthFormat = VK_FORMAT_UNDEFINED; // UNDEFINED = no depth attachment
         bool BlendEnable = false;
+        bool DepthTest = true;
+        bool DepthWrite = true;
 
         // Empty until we have vertex buffers and descriptors.
         std::vector<VkVertexInputBindingDescription> VertexBindings;

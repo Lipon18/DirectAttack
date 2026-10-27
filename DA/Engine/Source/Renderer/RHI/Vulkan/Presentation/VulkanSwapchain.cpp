@@ -1,8 +1,8 @@
 #include "PCH.h"
-#include "VulkanSwapchain.h"
-#include "VulkanDevice.h"
-#include "VulkanPhysicalDevice.h"
-#include "VulkanSurface.h"
+#include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanPhysicalDevice.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanSurface.h>
 #include <Core/Log.h>
 
 #include <vulkan/vk_enum_string_helper.h>

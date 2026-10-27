@@ -1,11 +1,14 @@
 #include "PCH.h"
 #include "VulkanRenderer.h"
-#include "VulkanDevice.h"
-#include "VulkanSwapchain.h"
-#include "VulkanAllocator.h"
+#include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
+#include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
+#include <Renderer/RHI/Vulkan/Memory/VulkanAllocator.h>
+#include <Renderer/Resources/ImageLoader.h>
 #include <Core/Paths.h>
 #include <Core/Log.h>
-#include <Renderer/ImageLoader.h>
+
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -15,26 +18,25 @@
 namespace DA {
     namespace {
         struct Vertex {
-            float Position[2];
+            float Position[3];
             float Color[3];
             float UV[2];
         };
 
         struct FrameUniforms {
+            glm::mat4 View;
+            glm::mat4 Proj;
             float Time;
-            float Aspect;
-            float Pad[2];
+            float Pad[3];
         };
 
         struct PushConstants {
-            float Offset[2];
-            float Angle;
-            float Pad;
+            glm::mat4 Model;
         };
 
         void TransitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
-                             VkAccessFlags2 dstAccess) {
+                             VkAccessFlags2 dstAccess, VkImageAspectFlags aspect = VK_IMAGE_ASPECT_COLOR_BIT) {
             VkImageMemoryBarrier2 barrier{VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2};
             barrier.srcStageMask = srcStage;
             barrier.srcAccessMask = srcAccess;
@@ -45,7 +47,7 @@ namespace DA {
             barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
             barrier.image = image;
-            barrier.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1};
+            barrier.subresourceRange = {aspect, 0, 1, 0, 1};
 
             VkDependencyInfo dependency{VK_STRUCTURE_TYPE_DEPENDENCY_INFO};
             dependency.imageMemoryBarrierCount = 1;
@@ -106,11 +108,15 @@ namespace DA {
         m_sampler = VulkanSampler::Create(m_device);
         if (!m_texture || !m_sampler) return false;
 
+        m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
+                                           m_swapchain.GetExtent().height);
+        if (!m_depth) return false;
+
         // Descriptors: binding 0 = per-frame uniforms, binding 1 = texture.
         const std::array<VkDescriptorSetLayoutBinding, 2> bindings = {{
             {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-              nullptr},
-             {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
+             nullptr},
+            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
         }};
         m_setLayout = VulkanDescriptorSetLayout::Create(m_device, bindings);
         if (!m_setLayout) return false;
@@ -131,14 +137,51 @@ namespace DA {
             WriteCombinedImageSamplerDescriptor(m_device, frame.Set, 1, m_texture->GetView(), m_sampler->GetHandle());
         }
 
+        // Cube: 24 vertices (4 per face so each face has its own UVs), counter-clockwise seen from outside.
+        constexpr float s = 0.5f;
         const Vertex vertices[] = {
-            {{-0.5f, -0.5f}, {1.0f, 0.2f, 0.2f}, {0.0f, 0.0f}},
-            {{0.5f, -0.5f}, {0.2f, 1.0f, 0.2f}, {1.0f, 0.0f}},
-            {{0.5f, 0.5f}, {0.3f, 0.4f, 1.0f}, {1.0f, 1.0f}},
-            {{-0.5f, 0.5f}, {1.0f, 1.0f, 0.2f}, {0.0f, 1.0f}},
+            // Front (+Z)
+            {{-s, -s, s}, {1.0f, 0.3f, 0.3f}, {0.0f, 1.0f}},
+            {{s, -s, s}, {1.0f, 0.3f, 0.3f}, {1.0f, 1.0f}},
+            {{s, s, s}, {1.0f, 0.3f, 0.3f}, {1.0f, 0.0f}},
+            {{-s, s, s}, {1.0f, 0.3f, 0.3f}, {0.0f, 0.0f}},
+            // Back (-Z)
+            {{s, -s, -s}, {0.3f, 1.0f, 0.3f}, {0.0f, 1.0f}},
+            {{-s, -s, -s}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+            {{-s, s, -s}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+            {{s, s, -s}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}},
+            // Right (+X)
+            {{s, -s, s}, {0.3f, 0.4f, 1.0f}, {0.0f, 1.0f}},
+            {{s, -s, -s}, {0.3f, 0.4f, 1.0f}, {1.0f, 1.0f}},
+            {{s, s, -s}, {0.3f, 0.4f, 1.0f}, {1.0f, 0.0f}},
+            {{s, s, s}, {0.3f, 0.4f, 1.0f}, {0.0f, 0.0f}},
+            // Left (-X)
+            {{-s, -s, -s}, {1.0f, 1.0f, 0.3f}, {0.0f, 1.0f}},
+            {{-s, -s, s}, {1.0f, 1.0f, 0.3f}, {1.0f, 1.0f}},
+            {{-s, s, s}, {1.0f, 1.0f, 0.3f}, {1.0f, 0.0f}},
+            {{-s, s, -s}, {1.0f, 1.0f, 0.3f}, {0.0f, 0.0f}},
+            // Top (+Y)
+            {{-s, s, s}, {1.0f, 0.3f, 1.0f}, {0.0f, 1.0f}},
+            {{s, s, s}, {1.0f, 0.3f, 1.0f}, {1.0f, 1.0f}},
+            {{s, s, -s}, {1.0f, 0.3f, 1.0f}, {1.0f, 0.0f}},
+            {{-s, s, -s}, {1.0f, 0.3f, 1.0f}, {0.0f, 0.0f}},
+            // Bottom (-Y)
+            {{-s, -s, -s}, {0.3f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+            {{s, -s, -s}, {0.3f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+            {{s, -s, s}, {0.3f, 1.0f, 1.0f}, {1.0f, 0.0f}},
+            {{-s, -s, s}, {0.3f, 1.0f, 1.0f}, {0.0f, 0.0f}},
         };
-        const uint16_t indices[] = {0, 1, 2, 2, 3, 0};
-
+        uint16_t indices[36];
+        for (uint16_t face = 0; face < 6; ++face) {
+            const uint16_t b = static_cast<uint16_t>(face * 4);
+            const uint16_t quad[6] = {b,
+                                      static_cast<uint16_t>(b + 1),
+                                      static_cast<uint16_t>(b + 2),
+                                      static_cast<uint16_t>(b + 2),
+                                      static_cast<uint16_t>(b + 3),
+                                      b};
+            std::copy(quad, quad + 6, indices + face * 6);
+        }
         m_vertexBuffer = VulkanBuffer::CreateDeviceLocal(m_device, m_allocator, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                                          vertices, sizeof(vertices));
         m_indexBuffer = VulkanBuffer::CreateDeviceLocal(m_device, m_allocator, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
@@ -146,19 +189,21 @@ namespace DA {
         if (!m_vertexBuffer || !m_indexBuffer) return false;
 
         VulkanGraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VertexShader = Paths::ResolveEngine("Shaders/Quad.vert.spv");
-        pipelineDesc.FragmentShader = Paths::ResolveEngine("Shaders/Quad.frag.spv");
+        pipelineDesc.VertexShader = Paths::ResolveShader("Cube.vert");
+        pipelineDesc.FragmentShader = Paths::ResolveShader("Cube.frag");
         pipelineDesc.ColorFormat = m_swapchain.GetFormat();
+        pipelineDesc.DepthFormat = m_depth->GetFormat();
+        pipelineDesc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipelineDesc.VertexBindings = {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
         pipelineDesc.VertexAttributes = {
-            {0, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, Position))},
+            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, Position))},
             {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, Color))},
             {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, UV))},
         };
         pipelineDesc.PushConstants = {{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)}};
         pipelineDesc.SetLayouts = {m_setLayout->GetHandle()};
-        m_quadPipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
-        if (!m_quadPipeline) return false;
+        m_cubePipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
+        if (!m_cubePipeline) return false;
 
         m_clock.Reset();
         return CreateRenderFinishedSemaphores();
@@ -182,6 +227,10 @@ namespace DA {
         m_requestedWidth = width;
         m_requestedHeight = height;
         m_needsRecreate = false;
+
+        m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
+                                           m_swapchain.GetExtent().height);
+        if (!m_depth) return false;
 
         // Always rebuild: a failed present can leave a semaphore signaled, and the image count may change.
         return CreateRenderFinishedSemaphores();
@@ -247,11 +296,20 @@ namespace DA {
         const VkImage image = m_swapchain.GetImage(imageIndex);
         const VkExtent2D extent = m_swapchain.GetExtent();
 
-        // UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL. The source stage matches the semaphore wait stage,
+        // Swapchain image: UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL. The source stage matches the semaphore wait stage,
         // so the transition cannot run before the image is actually available.
         TransitionImage(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
+
+        // Depth: contents are cleared every frame, so UNDEFINED is fine. The fragment-test stages on both sides
+        // order this frame's depth use after the previous frame's (the image is shared by the frames in flight).
+        TransitionImage(cmd, m_depth->GetHandle(), VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
+                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        m_depth->GetAspect());
 
         VkRenderingAttachmentInfo color{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
         color.imageView = m_swapchain.GetImageView(imageIndex);
@@ -260,15 +318,23 @@ namespace DA {
         color.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
         color.clearValue.color = {{m_clearColor[0], m_clearColor[1], m_clearColor[2], m_clearColor[3]}};
 
+        VkRenderingAttachmentInfo depth{VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO};
+        depth.imageView = m_depth->GetView();
+        depth.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depth.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth.clearValue.depthStencil = {1.0f, 0};
+
         VkRenderingInfo rendering{VK_STRUCTURE_TYPE_RENDERING_INFO};
         rendering.renderArea = {{0, 0}, extent};
         rendering.layerCount = 1;
         rendering.colorAttachmentCount = 1;
         rendering.pColorAttachments = &color;
+        rendering.pDepthAttachment = &depth;
 
-        vkCmdBeginRendering(cmd, &rendering);
+         vkCmdBeginRendering(cmd, &rendering);
 
-        m_quadPipeline->Bind(cmd);
+        m_cubePipeline->Bind(cmd);
 
         const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
                                   0.0f, 1.0f};
@@ -276,23 +342,30 @@ namespace DA {
         vkCmdSetViewport(cmd, 0, 1, &viewport);
         vkCmdSetScissor(cmd, 0, 1, &scissor);
 
+        // m_frameIndex has not advanced yet; the fence wait guarantees the GPU is done with this slot.
         Frame& frame = m_frames[m_frameIndex];
         const float t = static_cast<float>(m_clock.GetElapsedSeconds());
-        const FrameUniforms uniforms{
-            t, static_cast<float>(extent.width) / static_cast<float>(extent.height), {0.0f, 0.0f}};
+        const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+
+        FrameUniforms uniforms{};
+        uniforms.View = glm::lookAt(glm::vec3(1.8f, 1.4f, 2.4f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+        uniforms.Proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+        uniforms.Proj[1][1] *= -1.0f; // Vulkan clip space has Y pointing down
+        uniforms.Time = t;
         frame.Uniform->Write(&uniforms, sizeof(uniforms));
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_quadPipeline->GetLayout(), 0, 1, &frame.Set, 0,
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubePipeline->GetLayout(), 0, 1, &frame.Set, 0,
                                 nullptr);
+
         PushConstants push{};
-        push.Offset[0] = 0.3f * std::sin(t);
-        push.Angle = t;
-        vkCmdPushConstants(cmd, m_quadPipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+        push.Model = glm::rotate(glm::mat4(1.0f), t * 0.8f, glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f)));
+        vkCmdPushConstants(cmd, m_cubePipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
 
         const VkBuffer vertexBuffer = m_vertexBuffer->GetHandle();
         const VkDeviceSize vertexOffset = 0;
         vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &vertexOffset);
         vkCmdBindIndexBuffer(cmd, m_indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, 6, 1, 0, 0, 0);
+        vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+
         vkCmdEndRendering(cmd);
 
         // COLOR_ATTACHMENT_OPTIMAL -> PRESENT_SRC. No destination stage: the semaphore signal covers visibility.

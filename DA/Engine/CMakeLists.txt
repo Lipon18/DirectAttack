@@ -1,8 +1,10 @@
 set(DA_ENGINE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Source")
 set(DA_ENGINE_CONTENT_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Content")
 set(DA_ENGINE_GENERATED_DIR "${DA_GENERATED_DIR}/Core")
+set(DA_SHADER_OUTPUT_DIR "${CMAKE_BINARY_DIR}/generated/Shaders")
 
 file(MAKE_DIRECTORY "${DA_ENGINE_GENERATED_DIR}")
+file(MAKE_DIRECTORY "${DA_SHADER_OUTPUT_DIR}")
 
 configure_file(
     "${DA_ENGINE_SOURCE_DIR}/Core/EngineConfig.h.in"
@@ -33,9 +35,11 @@ target_compile_definitions(DirectAttack
         DA_BUILDING_LIBRARY
         DA_LOG_CATEGORY=Engine
         DA_ENGINE_CONTENT_DIR="${DA_ENGINE_CONTENT_DIR}"
+        DA_SHADER_OUTPUT_DIR="${DA_SHADER_OUTPUT_DIR}"
         GLFW_INCLUDE_VULKAN
     PUBLIC
         DA_SHARED
+        GLM_FORCE_DEPTH_ZERO_TO_ONE
 )
 
 # dependencies
@@ -45,6 +49,7 @@ target_link_libraries(DirectAttack
         glfw
         spdlog::spdlog
         hangar::vma
+        hangar::glm
     PRIVATE
         hangar::stb_image
 )
@@ -69,7 +74,7 @@ file(GLOB DA_SHADER_SOURCES CONFIGURE_DEPENDS
 set(DA_SHADER_BINARIES)
 foreach(SHADER IN LISTS DA_SHADER_SOURCES)
     get_filename_component(SHADER_NAME "${SHADER}" NAME)
-    set(SPV "${CMAKE_BINARY_DIR}/generated/Shaders/${SHADER_NAME}.spv")
+    set(SPV "${DA_SHADER_OUTPUT_DIR}/${SHADER_NAME}.spv")
 
     get_filename_component(SPV_DIR "${SPV}" DIRECTORY)
     file(MAKE_DIRECTORY "${SPV_DIR}")

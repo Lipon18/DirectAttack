@@ -21,6 +21,22 @@ namespace DA {
         m_graphicsFamily = families.Graphics;
         m_presentFamily = families.Present;
 
+        // Depth format: first one the GPU can use as a depth attachment.
+        constexpr std::array depthCandidates = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT,
+                                                VK_FORMAT_D24_UNORM_S8_UINT};
+        for (VkFormat f : depthCandidates) {
+            VkFormatProperties props{};
+            vkGetPhysicalDeviceFormatProperties(physicalDevice.GetHandle(), f, &props);
+            if (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) {
+                m_depthFormat = f;
+                break;
+            }
+        }
+        if (m_depthFormat == VK_FORMAT_UNDEFINED) {
+            DA_FATAL("No supported depth format.");
+            return false;
+        }
+
         // One queue per *unique* family (the same family may serve both roles).
         const std::set<uint32_t> uniqueFamilies = {m_graphicsFamily, m_presentFamily};
         const float priority = 1.0f;
@@ -62,10 +78,10 @@ namespace DA {
         }
         vkGetDeviceQueue(m_device, m_graphicsFamily, 0, &m_graphicsQueue);
         vkGetDeviceQueue(m_device, m_presentFamily, 0, &m_presentQueue);
-        DA_INFO("Vulkan device created (graphics family {}, present family {}, anisotropy {}).", m_graphicsFamily,
-                m_presentFamily, enabled.features.samplerAnisotropy ? "on" : "off");
         m_anisotropyEnabled = enabled.features.samplerAnisotropy == VK_TRUE;
         m_maxAnisotropy = physicalDevice.GetProperties().limits.maxSamplerAnisotropy;
+        DA_INFO("Vulkan device created (graphics family {}, present family {}, anisotropy {}, depth {}).",
+                m_graphicsFamily, m_presentFamily, m_anisotropyEnabled ? "on" : "off", string_VkFormat(m_depthFormat));
         return true;
     }
 

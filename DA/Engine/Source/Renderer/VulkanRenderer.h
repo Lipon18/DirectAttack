@@ -2,13 +2,13 @@
 
 #include <Core/DA_API.h>
 #include <Core/Time/Clock.h>
-#include "VulkanBuffer.h"
-#include "VulkanCommandBuffer.h"
-#include "VulkanCommandPool.h"
-#include "VulkanDescriptors.h"
-#include "VulkanGraphicsPipeline.h"
-#include "VulkanImage.h"
-#include "VulkanSync.h"
+#include <Renderer/RHI/Vulkan/Memory/VulkanBuffer.h>
+#include <Renderer/RHI/Vulkan/Commands/VulkanCommandBuffer.h>
+#include <Renderer/RHI/Vulkan/Commands/VulkanCommandPool.h>
+#include <Renderer/RHI/Vulkan/Descriptors/VulkanDescriptors.h>
+#include <Renderer/RHI/Vulkan/Pipelines/VulkanGraphicsPipeline.h>
+#include <Renderer/RHI/Vulkan/Resources/VulkanImage.h>
+#include <Renderer/RHI/Vulkan/Commands/VulkanSync.h>
 
 #include <vulkan/vulkan.h>
 
@@ -75,9 +75,10 @@ namespace DA {
 
         std::unique_ptr<VulkanImage> m_texture;
         std::unique_ptr<VulkanSampler> m_sampler;
+        std::unique_ptr<VulkanImage> m_depth; 
         std::unique_ptr<VulkanDescriptorSetLayout> m_setLayout;
         std::unique_ptr<VulkanDescriptorPool> m_descriptorPool;
-        std::unique_ptr<VulkanGraphicsPipeline> m_quadPipeline;
+        std::unique_ptr<VulkanGraphicsPipeline> m_cubePipeline;
         std::unique_ptr<VulkanBuffer> m_vertexBuffer;
         std::unique_ptr<VulkanBuffer> m_indexBuffer;
         Clock m_clock;

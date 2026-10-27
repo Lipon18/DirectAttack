@@ -25,6 +25,10 @@ namespace DA {
         return Combine(s_engineRoot, relativePath);
     }
 
+    std::string Paths::ResolveShader(const std::string& shaderFileName) {
+        return (fs::path(DA_SHADER_OUTPUT_DIR) / (shaderFileName + ".spv")).lexically_normal().generic_string();
+    }
+
     std::string Paths::Combine(const fs::path& root, const std::string& relativePath) {
         /*fs::path rel{relativePath};
         if (rel.has_root_name()) return rel.generic_string();

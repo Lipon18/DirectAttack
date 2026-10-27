@@ -28,11 +28,11 @@ namespace DA {
         uint32_t GetGraphicsFamily() const { return m_graphicsFamily; }
         uint32_t GetPresentFamily() const { return m_presentFamily; }
 
-        // Blocks until the GPU has finished all submitted work.
-        void WaitIdle() const;
-
         bool IsAnisotropyEnabled() const { return m_anisotropyEnabled; }
         float GetMaxSamplerAnisotropy() const { return m_maxAnisotropy; }
+        VkFormat GetDepthFormat() const { return m_depthFormat; }
+        // Blocks until the GPU has finished all submitted work.
+        void WaitIdle() const;
 
     private:
         VulkanDevice() = default;
@@ -40,6 +40,7 @@ namespace DA {
 
         bool m_anisotropyEnabled = false;
         float m_maxAnisotropy = 1.0f;
+        VkFormat m_depthFormat = VK_FORMAT_UNDEFINED;
 
         VkDevice m_device = VK_NULL_HANDLE;
         VkQueue m_graphicsQueue = VK_NULL_HANDLE;

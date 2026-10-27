@@ -1,10 +1,10 @@
 #include "PCH.h"
 #include "VulkanImage.h"
-#include "VulkanAllocator.h"
-#include "VulkanBuffer.h"
-#include "VulkanCommandBuffer.h"
-#include "VulkanCommandPool.h"
-#include "VulkanDevice.h"
+#include <Renderer/RHI/Vulkan/Memory/VulkanAllocator.h>
+#include <Renderer/RHI/Vulkan/Memory/VulkanBuffer.h>
+#include <Renderer/RHI/Vulkan/Commands/VulkanCommandBuffer.h>
+#include <Renderer/RHI/Vulkan/Commands/VulkanCommandPool.h>
+#include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -49,6 +49,7 @@ namespace DA {
         std::unique_ptr<VulkanImage> image(new VulkanImage(device));
         image->m_width = width;
         image->m_height = height;
+        image->m_format = format;
         image->m_mipLevels = static_cast<uint32_t>(std::bit_width(std::max(width, height)));
 
         VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
@@ -131,6 +132,57 @@ namespace DA {
             return nullptr;
         }
         DA_INFO("Texture created: {}x{}, {} mip levels.", width, height, mips);
+        return image;
+    }
+
+    std::unique_ptr<VulkanImage> VulkanImage::CreateDepth(const VulkanDevice& device, const VulkanAllocator& allocator,
+                                                          uint32_t width, uint32_t height) {
+        const VkFormat format = device.GetDepthFormat();
+        if (format == VK_FORMAT_UNDEFINED || width == 0 || height == 0) {
+            DA_ERROR("CreateDepth: no depth format or zero size.");
+            return nullptr;
+        }
+        std::unique_ptr<VulkanImage> image(new VulkanImage(device));
+        image->m_width = width;
+        image->m_height = height;
+        image->m_format = format;
+        image->m_mipLevels = 1;
+        const bool hasStencil = format == VK_FORMAT_D32_SFLOAT_S8_UINT || format == VK_FORMAT_D24_UNORM_S8_UINT;
+        image->m_aspect =
+            hasStencil ? (VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT) : VK_IMAGE_ASPECT_DEPTH_BIT;
+        VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        info.imageType = VK_IMAGE_TYPE_2D;
+        info.format = format;
+        info.extent = {width, height, 1};
+        info.mipLevels = 1;
+        info.arrayLayers = 1;
+        info.samples = VK_SAMPLE_COUNT_1_BIT;
+        info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        info.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        allocInfo.flags = VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT; // recommended for attachments
+        if (VkResult r = vmaCreateImage(allocator.GetHandle(), &info, &allocInfo, &image->m_image, &image->m_allocation,
+                                        nullptr);
+            r != VK_SUCCESS) {
+            DA_ERROR("vmaCreateImage (depth) failed: {}", string_VkResult(r));
+            image->m_image = VK_NULL_HANDLE;
+            return nullptr;
+        }
+        image->m_allocator = allocator.GetHandle();
+
+        VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        viewInfo.image = image->m_image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = format;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1, 0, 1}; // the view only exposes depth
+        if (VkResult r = vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &image->m_view); r != VK_SUCCESS) {
+            DA_ERROR("vkCreateImageView (depth) failed: {}", string_VkResult(r));
+            image->m_view = VK_NULL_HANDLE;
+            return nullptr;
+        }
         return image;
     }
 

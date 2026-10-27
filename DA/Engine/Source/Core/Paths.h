@@ -17,6 +17,9 @@ namespace DA {
         // Relative to the engine content root.
         static std::string ResolveEngine(const std::string& relativePath);
 
+        // Compiled SPIR-V.
+        static std::string ResolveShader(const std::string& shaderFileName);
+
         static const std::filesystem::path& GetProjectRoot() { return s_projectRoot; }
         static const std::filesystem::path& GetEngineRoot() { return s_engineRoot; }
 

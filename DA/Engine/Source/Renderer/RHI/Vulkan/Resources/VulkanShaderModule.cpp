@@ -1,6 +1,6 @@
 #include "PCH.h"
 #include "VulkanShaderModule.h"
-#include "VulkanDevice.h"
+#include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 

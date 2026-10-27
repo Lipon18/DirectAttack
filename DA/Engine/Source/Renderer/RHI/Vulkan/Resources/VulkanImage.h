@@ -22,6 +22,11 @@ namespace DA {
         static std::unique_ptr<VulkanImage> CreateTexture2D(const VulkanDevice& device,
                                                             const VulkanAllocator& allocator, VkFormat format,
                                                             uint32_t width, uint32_t height, const void* pixels);
+
+        // Depth attachment image (format from the device), cleared every frame. Layout starts UNDEFINED.
+        static std::unique_ptr<VulkanImage> CreateDepth(const VulkanDevice& device, const VulkanAllocator& allocator,
+                                                        uint32_t width, uint32_t height);
+
         ~VulkanImage();
 
         VulkanImage(const VulkanImage&) = delete;
@@ -32,6 +37,8 @@ namespace DA {
         uint32_t GetWidth() const { return m_width; }
         uint32_t GetHeight() const { return m_height; }
         uint32_t GetMipLevels() const { return m_mipLevels; }
+        VkFormat GetFormat() const { return m_format; }
+        VkImageAspectFlags GetAspect() const { return m_aspect; }
 
     private:
         explicit VulkanImage(const VulkanDevice& device) : m_device(device) {}
@@ -41,6 +48,8 @@ namespace DA {
         VmaAllocation m_allocation = VK_NULL_HANDLE;
         VkImage m_image = VK_NULL_HANDLE;
         VkImageView m_view = VK_NULL_HANDLE;
+        VkFormat m_format = VK_FORMAT_UNDEFINED;
+        VkImageAspectFlags m_aspect = VK_IMAGE_ASPECT_COLOR_BIT;
         uint32_t m_width = 0;
         uint32_t m_height = 0;
         uint32_t m_mipLevels = 1;
