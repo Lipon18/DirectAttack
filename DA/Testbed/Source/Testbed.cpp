@@ -31,7 +31,7 @@ protected:
 
         auto& input = GetEngine().GetInput();
         DA::FlyCameraController::BindDefaultControls(input);
-        input.BindAction("ReleaseCursor", {DA::Key::Escape});
+        input.GetScheme().AddButton("ReleaseCursor", DA::Bind::KeyButton(DA::Key::Escape));
 
         m_camera.SetPosition({3.0f, 3.0f, 6.0f});
         m_camera.LookAt({0.0f, 0.0f, 0.0f});
@@ -45,7 +45,7 @@ protected:
         auto& input = GetEngine().GetInput();
 
         if(!input.IsCursorCaptured() && input.IsMousePressed(DA::MouseButton::Left)) input.SetCursorCaptured(true);
-        if (input.IsActionPressed("ReleaseCursor")) input.SetCursorCaptured(false);
+        if (input.IsButtonPressed("ReleaseCursor")) input.SetCursorCaptured(false);
         if(input.IsCursorCaptured()) m_fly.Update(m_camera, input, deltaSeconds);
         renderer.SetCamera(m_camera);
 

@@ -5,12 +5,13 @@
 
 namespace DA {
     void FlyCameraController::BindDefaultControls(Input& input) {
-        input.BindAxis("MoveForward", {AxisBinding::FromKey(Key::W, 1.0f), AxisBinding::FromKey(Key::S, -1.0f)});
-        input.BindAxis("MoveRight", {AxisBinding::FromKey(Key::D, 1.0f), AxisBinding::FromKey(Key::A, -1.0f)});
-        input.BindAxis("MoveUp", {AxisBinding::FromKey(Key::E, 1.0f), AxisBinding::FromKey(Key::Q, -1.0f)});
-        input.BindAxis("LookX", {AxisBinding::MouseX()});
-        input.BindAxis("LookY", {AxisBinding::MouseY()});
-        input.BindAction("Sprint", {Key::LeftShift});
+        InputScheme& s = input.GetScheme();
+        s.AddAxis("MoveForward", Bind::KeyAxis(Key::S, Key::W));
+        s.AddAxis("MoveRight", Bind::KeyAxis(Key::A, Key::D));
+        s.AddAxis("MoveUp", Bind::KeyAxis(Key::Q, Key::E));
+        s.AddAxis("LookX", Bind::MouseDelta(MouseAxisId::X));
+        s.AddAxis("LookY", Bind::MouseDelta(MouseAxisId::Y));
+        s.AddButton("Sprint", Bind::KeyButton(Key::LeftShift));
     }
 
     void FlyCameraController::Update(Camera& camera, const Input& input, float deltaSeconds) const {
@@ -24,7 +25,7 @@ namespace DA {
         if (glm::dot(direction, direction) > 1.0f) direction = glm::normalize(direction); // no faster diagonals
 
         float speed = Settings.MoveSpeed;
-        if (input.IsActionDown("Sprint")) speed *= Settings.SprintMultiplier;
+        if (input.IsButtonDown("Sprint")) speed *= Settings.SprintMultiplier;
 
         camera.SetPosition(camera.GetPosition() + direction * speed * deltaSeconds);
     }

@@ -1,24 +1,26 @@
 #include "PCH.h"
 #include "Input.h"
+#include <Core/Log.h>
 #include <Platform/Window.h>
 
 namespace DA {
     namespace {
-        // GLFW's valid printable/function key range.
-        constexpr int FirstKey = 32;
-        constexpr int LastKey = 32;
+        constexpr int FirstKey = 32; // GLFW's valid key range
+        constexpr int LastKey = 348;
     } // namespace
 
-    Input::Input(Window& window) : m_window(window) {}
+    Input::Input(Window& window) : m_window(window) {
+        AddScheme("Default", true);
+    }
 
     void Input::Update() {
         m_prevKeys = m_keys;
         m_prevMouse = m_mouse;
 
-        for (int k = FirstKey; k <= LastKey; ++k)
-            m_keys[static_cast<size_t>(k)] = m_window.IsKeyDown(k);
-        for (size_t b = 0; b < MouseButtonCount; ++b)
-            m_mouse[b] = m_window.IsMouseButtonDown(static_cast<int>(b));
+        // clang-format off
+        for (int k = FirstKey; k <= LastKey; ++k) m_keys[static_cast<size_t>(k)] = m_window.IsKeyDown(k);
+        for (size_t b = 0; b < MouseButtonCount; ++b) m_mouse[b] = m_window.IsMouseButtonDown(static_cast<int>(b));
+        // clang-format on
 
         double x = 0.0;
         double y = 0.0;
@@ -32,6 +34,8 @@ namespace DA {
         m_lastY = y;
         m_hasLastPos = true;
         m_skipDelta = false;
+
+        m_current->Update(*this);
     }
 
     void Input::SetCursorCaptured(bool captured) {
@@ -41,51 +45,49 @@ namespace DA {
         m_skipDelta = true; // the cursor position jumps when the mode changes
     }
 
-    void Input::BindAction(const std::string& name, std::vector<Key> keys) {
-        m_actions[name] = std::move(keys);
+    InputScheme* Input::GetScheme(const std::string& name) const {
+        const auto it = m_schemes.find(name);
+        return it == m_schemes.end() ? nullptr : it->second.get();
     }
 
-    void Input::BindAxis(const std::string& name, std::vector<AxisBinding> bindings) {
-        m_axes[name] = std::move(bindings);
+    InputScheme& Input::AddScheme(const std::string& name, bool makeCurrent) {
+        auto& slot = m_schemes[name];
+        if (!slot) slot = std::make_unique<InputScheme>();
+        if (makeCurrent || !m_current) {
+            m_current = slot.get();
+            m_current->Update(*this, /*sync*/ true);
+        }
+        return *slot;
     }
 
-    bool Input::IsActionDown(const std::string& name) const {
-        const auto it = m_actions.find(name);
-        if (it == m_actions.end()) return false;
-        return std::ranges::any_of(it->second, [&](Key k) { return IsKeyDown(k); });
-    }
-
-    bool Input::IsActionPressed(const std::string& name) const {
-        const auto it = m_actions.find(name);
-        if (it == m_actions.end()) return false;
-        return std::ranges::any_of(it->second, [&](Key k) { return IsKeyPressed(k); });
-    }
-
-    bool Input::IsActionReleased(const std::string& name) const {
-        const auto it = m_actions.find(name);
-        if (it == m_actions.end()) return false;
-        return std::ranges::any_of(it->second, [&](Key k) { return IsKeyReleased(k); });
+    bool Input::SetScheme(const std::string& name) {
+        InputScheme* scheme = GetScheme(name);
+        if (!scheme) {
+            DA_WARN("Input scheme not found: {}", name);
+            return false;
+        }
+        m_current = scheme;
+        m_current->Update(*this, /*sync*/ true); // held keys must not fire a fake press
+        return true;
     }
 
     float Input::GetAxis(const std::string& name) const {
-        const auto it = m_axes.find(name);
-        if (it == m_axes.end()) return 0.0f;
+        const InputAxis* axis = m_current->GetAxis(name);
+        return axis ? axis->GetAmount(*this) : 0.0f;
+    }
 
-        float keys = 0.0f;
-        float mouse = 0.0f;
-        for (const AxisBinding& b : it->second) {
-            switch (b.Type) {
-            case AxisBinding::Source::Key:
-                if (IsKeyDown(b.KeyCode)) keys += b.Scale;
-                break;
-            case AxisBinding::Source::MouseX:
-                mouse += m_mouseDelta.x * b.Scale;
-                break;
-            case AxisBinding::Source::MouseY:
-                mouse += m_mouseDelta.y * b.Scale;
-                break;
-            }
-        }
-        return std::clamp(keys, -1.0f, 1.0f) + mouse;
+    bool Input::IsButtonDown(const std::string& name) const {
+        const InputButton* b = m_current->GetButton(name);
+        return b && b->Down();
+    }
+
+    bool Input::IsButtonPressed(const std::string& name) const {
+        const InputButton* b = m_current->GetButton(name);
+        return b && b->Pressed();
+    }
+
+    bool Input::IsButtonReleased(const std::string& name) const {
+        const InputButton* b = m_current->GetButton(name);
+        return b && b->Released();
     }
 } // namespace DA
