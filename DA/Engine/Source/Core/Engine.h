@@ -15,6 +15,7 @@
 namespace DA {
     class Application;
     class Window;
+    class Input;
     class VulkanInstance;
     class VulkanSurface;
     class VulkanPhysicalDevice;
@@ -47,10 +48,15 @@ namespace DA {
 
         static Engine* Get() { return s_instance; }
 
+        VulkanRenderer& GetRenderer() const;
+
+        Input& GetInput() const;
+
     private:
         static Engine* s_instance;
 
         std::unique_ptr<Window> m_window;
+        std::unique_ptr<Input> m_input;
         std::unique_ptr<VulkanInstance> m_vkInstance;
         std::unique_ptr<VulkanSurface> m_vkSurface;
         std::unique_ptr<VulkanPhysicalDevice> m_vkPhysicalDevice;

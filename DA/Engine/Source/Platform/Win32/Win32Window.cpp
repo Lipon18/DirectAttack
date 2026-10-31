@@ -19,7 +19,7 @@ namespace DA {
     bool Win32Window::Init(const WindowDesc& desc) {
         if (s_windowCount == 0) {
             glfwSetErrorCallback(GlfwErrorCallback);
-            
+
             if (glfwInit() == GLFW_FALSE) {
                 DA_FATAL("GLFW failed to initialize.");
                 return false;
@@ -49,7 +49,7 @@ namespace DA {
         glfwGetFramebufferSize(m_handle, &fbWidth, &fbHeight);
         m_width = static_cast<uint32_t>(fbWidth);
         m_height = static_cast<uint32_t>(fbHeight);
-        
+
         glfwSetWindowUserPointer(m_handle, this);
         glfwSetFramebufferSizeCallback(m_handle, FramebufferSizeCallback);
         glfwSetWindowCloseCallback(m_handle, CloseCallback);
@@ -80,10 +80,33 @@ namespace DA {
         glfwSetWindowTitle(m_handle, title.c_str());
     }
 
+    bool Win32Window::IsKeyDown(int key) const {
+        return glfwGetKey(m_handle, key) == GLFW_PRESS;
+    }
+
+    bool Win32Window::IsMouseButtonDown(int button) const {
+        return glfwGetMouseButton(m_handle, button) == GLFW_PRESS;
+    }
+
+    void Win32Window::GetCursorPosition(double& x, double& y) const {
+        glfwGetCursorPos(m_handle, &x, &y);
+    }
+
+    void Win32Window::SetCursorCaptured(
+        bool captured) { // Raw motion only works while the cursor is disabled, so order the two calls accordingly.
+        if (captured) {
+            glfwSetInputMode(m_handle, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            if (glfwRawMouseMotionSupported()) glfwSetInputMode(m_handle, GLFW_RAW_MOUSE_MOTION, GLFW_TRUE);
+        } else {
+            if (glfwRawMouseMotionSupported()) glfwSetInputMode(m_handle, GLFW_RAW_MOUSE_MOTION, GLFW_FALSE);
+            glfwSetInputMode(m_handle, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
+
     void Win32Window::FramebufferSizeCallback(GLFWwindow* window, int width, int height) {
         auto* self = static_cast<Win32Window*>(glfwGetWindowUserPointer(window));
         if (!self) return;
-        self->m_width = static_cast<uint32_t>(width);    // 0 when minimized
+        self->m_width = static_cast<uint32_t>(width); // 0 when minimized
         self->m_height = static_cast<uint32_t>(height);
         DA_INFO("Window resized: {}x{}", width, height);
         if (self->OnResize) self->OnResize(self->m_width, self->m_height);

@@ -1,28 +1,25 @@
 #include "PCH.h"
 #include "VulkanRenderer.h"
 #include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
-#include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
 #include <Renderer/RHI/Vulkan/Memory/VulkanAllocator.h>
+#include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
 #include <Renderer/Resources/ImageLoader.h>
-#include <Core/Paths.h>
 #include <Core/Log.h>
+#include <Core/Paths.h>
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <vulkan/vk_enum_string_helper.h>
 
+#include <algorithm>
+#include <array>
+#include <optional>
 #include <span>
-#include <cmath>
 
 namespace DA {
     namespace {
-        struct Vertex {
-            float Position[3];
-            float Color[3];
-            float UV[2];
-        };
-
+        // Must match FrameData in Cube.vert/.frag (std140, 144 bytes).
         struct FrameUniforms {
             glm::mat4 View;
             glm::mat4 Proj;
@@ -30,6 +27,7 @@ namespace DA {
             float Pad[3];
         };
 
+        // Must match Push in Cube.vert (64 bytes).
         struct PushConstants {
             glm::mat4 Model;
         };
@@ -55,7 +53,7 @@ namespace DA {
             vkCmdPipelineBarrier2(cmd, &dependency);
         }
 
-        // 64x64 BGRA checkerboard, used when the texture file is missing.
+        // 64x64 RGBA checkerboard, used when the texture file is missing.
         ImageData MakeCheckerboard() {
             ImageData data;
             data.Width = 64;
@@ -84,7 +82,7 @@ namespace DA {
 
     bool VulkanRenderer::Init() {
         for (Frame& frame : m_frames) {
-            // The pool is reset as a whole every frame, so TRANSIENT is enough (no per-buffer reset flag).
+            // The pool is reset as a whole every frame, so TRANSIENT is enough.
             frame.Pool =
                 VulkanCommandPool::Create(m_device, m_device.GetGraphicsFamily(), VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
             if (!frame.Pool) return false;
@@ -100,7 +98,7 @@ namespace DA {
         // Texture + sampler (stb gives RGBA, so the format is R8G8B8A8_SRGB).
         std::optional<ImageData> image = LoadImageFile(Paths::ResolveEngine("Textures/Vulkan_Logo.png"));
         if (!image) {
-            DA_WARN("Using the checkboard fallback texture.");
+            DA_WARN("Using the checkerboard fallback texture.");
             image = MakeCheckerboard();
         }
         m_texture = VulkanImage::CreateTexture2D(m_device, m_allocator, VK_FORMAT_R8G8B8A8_SRGB, image->Width,
@@ -108,6 +106,7 @@ namespace DA {
         m_sampler = VulkanSampler::Create(m_device);
         if (!m_texture || !m_sampler) return false;
 
+        // Depth image (created before the pipeline, which needs its format).
         m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
                                            m_swapchain.GetExtent().height);
         if (!m_depth) return false;
@@ -137,69 +136,14 @@ namespace DA {
             WriteCombinedImageSamplerDescriptor(m_device, frame.Set, 1, m_texture->GetView(), m_sampler->GetHandle());
         }
 
-        // Cube: 24 vertices (4 per face so each face has its own UVs), counter-clockwise seen from outside.
-        constexpr float s = 0.5f;
-        const Vertex vertices[] = {
-            // Front (+Z)
-            {{-s, -s, s}, {1.0f, 0.3f, 0.3f}, {0.0f, 1.0f}},
-            {{s, -s, s}, {1.0f, 0.3f, 0.3f}, {1.0f, 1.0f}},
-            {{s, s, s}, {1.0f, 0.3f, 0.3f}, {1.0f, 0.0f}},
-            {{-s, s, s}, {1.0f, 0.3f, 0.3f}, {0.0f, 0.0f}},
-            // Back (-Z)
-            {{s, -s, -s}, {0.3f, 1.0f, 0.3f}, {0.0f, 1.0f}},
-            {{-s, -s, -s}, {0.3f, 1.0f, 0.3f}, {1.0f, 1.0f}},
-            {{-s, s, -s}, {0.3f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-            {{s, s, -s}, {0.3f, 1.0f, 0.3f}, {0.0f, 0.0f}},
-            // Right (+X)
-            {{s, -s, s}, {0.3f, 0.4f, 1.0f}, {0.0f, 1.0f}},
-            {{s, -s, -s}, {0.3f, 0.4f, 1.0f}, {1.0f, 1.0f}},
-            {{s, s, -s}, {0.3f, 0.4f, 1.0f}, {1.0f, 0.0f}},
-            {{s, s, s}, {0.3f, 0.4f, 1.0f}, {0.0f, 0.0f}},
-            // Left (-X)
-            {{-s, -s, -s}, {1.0f, 1.0f, 0.3f}, {0.0f, 1.0f}},
-            {{-s, -s, s}, {1.0f, 1.0f, 0.3f}, {1.0f, 1.0f}},
-            {{-s, s, s}, {1.0f, 1.0f, 0.3f}, {1.0f, 0.0f}},
-            {{-s, s, -s}, {1.0f, 1.0f, 0.3f}, {0.0f, 0.0f}},
-            // Top (+Y)
-            {{-s, s, s}, {1.0f, 0.3f, 1.0f}, {0.0f, 1.0f}},
-            {{s, s, s}, {1.0f, 0.3f, 1.0f}, {1.0f, 1.0f}},
-            {{s, s, -s}, {1.0f, 0.3f, 1.0f}, {1.0f, 0.0f}},
-            {{-s, s, -s}, {1.0f, 0.3f, 1.0f}, {0.0f, 0.0f}},
-            // Bottom (-Y)
-            {{-s, -s, -s}, {0.3f, 1.0f, 1.0f}, {0.0f, 1.0f}},
-            {{s, -s, -s}, {0.3f, 1.0f, 1.0f}, {1.0f, 1.0f}},
-            {{s, -s, s}, {0.3f, 1.0f, 1.0f}, {1.0f, 0.0f}},
-            {{-s, -s, s}, {0.3f, 1.0f, 1.0f}, {0.0f, 0.0f}},
-        };
-        uint16_t indices[36];
-        for (uint16_t face = 0; face < 6; ++face) {
-            const uint16_t b = static_cast<uint16_t>(face * 4);
-            const uint16_t quad[6] = {b,
-                                      static_cast<uint16_t>(b + 1),
-                                      static_cast<uint16_t>(b + 2),
-                                      static_cast<uint16_t>(b + 2),
-                                      static_cast<uint16_t>(b + 3),
-                                      b};
-            std::copy(quad, quad + 6, indices + face * 6);
-        }
-        m_vertexBuffer = VulkanBuffer::CreateDeviceLocal(m_device, m_allocator, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
-                                                         vertices, sizeof(vertices));
-        m_indexBuffer = VulkanBuffer::CreateDeviceLocal(m_device, m_allocator, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,
-                                                        indices, sizeof(indices));
-        if (!m_vertexBuffer || !m_indexBuffer) return false;
-
         VulkanGraphicsPipelineDesc pipelineDesc;
         pipelineDesc.VertexShader = Paths::ResolveShader("Cube.vert");
         pipelineDesc.FragmentShader = Paths::ResolveShader("Cube.frag");
         pipelineDesc.ColorFormat = m_swapchain.GetFormat();
         pipelineDesc.DepthFormat = m_depth->GetFormat();
         pipelineDesc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        pipelineDesc.VertexBindings = {{0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}};
-        pipelineDesc.VertexAttributes = {
-            {0, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, Position))},
-            {1, 0, VK_FORMAT_R32G32B32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, Color))},
-            {2, 0, VK_FORMAT_R32G32_SFLOAT, static_cast<uint32_t>(offsetof(Vertex, UV))},
-        };
+        pipelineDesc.VertexBindings = {VertexBinding()};
+        pipelineDesc.VertexAttributes = VertexAttributes(); // plain assignment: it already returns a vector
         pipelineDesc.PushConstants = {{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)}};
         pipelineDesc.SetLayouts = {m_setLayout->GetHandle()};
         m_cubePipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
@@ -228,6 +172,7 @@ namespace DA {
         m_requestedHeight = height;
         m_needsRecreate = false;
 
+        // The GPU is idle (the swapchain waited), so the old depth image can be replaced safely.
         m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
                                            m_swapchain.GetExtent().height);
         if (!m_depth) return false;
@@ -236,7 +181,17 @@ namespace DA {
         return CreateRenderFinishedSemaphores();
     }
 
+    std::unique_ptr<VulkanMesh> VulkanRenderer::CreateMesh(const MeshData& data) const {
+        return VulkanMesh::Create(m_device, m_allocator, data.Vertices, data.Indices);
+    }
+
     bool VulkanRenderer::RenderFrame(uint32_t width, uint32_t height) {
+        // Whatever happens below (early return, minimize, error), this frame's submissions are discarded.
+        struct DrawListReset {
+            std::vector<DrawItem>& List;
+            ~DrawListReset() { List.clear(); }
+        } drawListReset{m_drawList};
+
         if (width == 0 || height == 0) return true; // minimized: nothing to draw
 
         if (m_needsRecreate || width != m_requestedWidth || height != m_requestedHeight) {
@@ -262,6 +217,7 @@ namespace DA {
         }
         if (result == VK_SUBOPTIMAL_KHR) m_needsRecreate = true; // usable now, rebuild next frame
 
+        // Reset the fence only now that we know we will submit.
         if (!frame.InFlight->Reset()) {
             DA_ERROR("Resetting the in-flight fence failed.");
             return false;
@@ -288,6 +244,7 @@ namespace DA {
             DA_ERROR("vkQueuePresentKHR failed: {}", string_VkResult(result));
             return false;
         }
+
         m_frameIndex = (m_frameIndex + 1) % FramesInFlight;
         return true;
     }
@@ -332,7 +289,7 @@ namespace DA {
         rendering.pColorAttachments = &color;
         rendering.pDepthAttachment = &depth;
 
-         vkCmdBeginRendering(cmd, &rendering);
+        vkCmdBeginRendering(cmd, &rendering);
 
         m_cubePipeline->Bind(cmd);
 
@@ -348,23 +305,21 @@ namespace DA {
         const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
 
         FrameUniforms uniforms{};
-        uniforms.View = glm::lookAt(glm::vec3(1.8f, 1.4f, 2.4f), glm::vec3(0.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        uniforms.Proj = glm::perspective(glm::radians(60.0f), aspect, 0.1f, 100.0f);
+        uniforms.View = m_camera.GetViewMatrix();
+        uniforms.Proj = m_camera.GetProjectionMatrix(aspect);
         uniforms.Proj[1][1] *= -1.0f; // Vulkan clip space has Y pointing down
         uniforms.Time = t;
         frame.Uniform->Write(&uniforms, sizeof(uniforms));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubePipeline->GetLayout(), 0, 1, &frame.Set, 0,
                                 nullptr);
 
-        PushConstants push{};
-        push.Model = glm::rotate(glm::mat4(1.0f), t * 0.8f, glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f)));
-        vkCmdPushConstants(cmd, m_cubePipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-
-        const VkBuffer vertexBuffer = m_vertexBuffer->GetHandle();
-        const VkDeviceSize vertexOffset = 0;
-        vkCmdBindVertexBuffers(cmd, 0, 1, &vertexBuffer, &vertexOffset);
-        vkCmdBindIndexBuffer(cmd, m_indexBuffer->GetHandle(), 0, VK_INDEX_TYPE_UINT16);
-        vkCmdDrawIndexed(cmd, 36, 1, 0, 0, 0);
+        for (const DrawItem& item : m_drawList) {
+            if (!item.Mesh) continue;
+            PushConstants push{item.Model};
+            vkCmdPushConstants(cmd, m_cubePipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
+            item.Mesh->Bind(cmd);
+            item.Mesh->Draw(cmd);
+        }
 
         vkCmdEndRendering(cmd);
 
@@ -375,7 +330,7 @@ namespace DA {
     }
 
     VulkanRenderer::~VulkanRenderer() {
-        // Nothing may still be using the semaphores, fences or command buffers when they are destroyed.
+        // Nothing may still be using the semaphores, fences, command buffers or descriptors when they are destroyed.
         m_device.WaitIdle();
     }
 } // namespace DA

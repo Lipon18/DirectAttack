@@ -50,5 +50,13 @@ namespace DA {
 
         // GLFWwindow* on the GLFW backend. Used later to create the Vulkan surface.
         virtual void* GetNativeHandle() const = 0;
+
+        // Raw polled input. `key` and `button` use GLFW's numeric codes (see Key and MouseButton in
+        // Core/Input/Input.h).
+        virtual bool IsKeyDown(int key) const = 0;
+        virtual bool IsMouseButtonDown(int button) const = 0;
+        virtual void GetCursorPosition(double& x, double& y) const = 0;
+        // Captured = hidden and locked to the window, giving unbounded mouse deltas for camera look.
+        virtual void SetCursorCaptured(bool captured) = 0;
     };
 } // namespace DA

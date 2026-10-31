@@ -3,6 +3,7 @@
 #include "Application.h"
 #include "Paths.h"
 #include "Log.h"
+#include "Input/Input.h"
 #include <Platform/Window.h>
 #include <Renderer/RHI/Vulkan/Core/VulkanInstance.h>
 #include <Renderer/RHI/Vulkan/Core/VulkanSurface.h>
@@ -65,6 +66,8 @@ namespace DA {
         // extension. For now, the engine owns it in this local implementation.
         // See the member declaration below for the persistent window.
         m_window = std::move(window);
+
+        m_input = std::make_unique<Input>(*m_window);
 
         // Create the Vulkan instance
         // clang-format off
@@ -133,6 +136,7 @@ namespace DA {
 
         while (m_running && !m_window->ShouldClose()) {
             m_window->PollEvents();
+            m_input->Update();
             const auto now = Clock::now();
             const float deltaSeconds = std::chrono::duration<float>(now - lastFrame).count();
             lastFrame = now;
@@ -160,6 +164,14 @@ namespace DA {
 
     Window* Engine::GetWindow() const {
         return m_window.get();
+    }
+
+    VulkanRenderer& Engine::GetRenderer() const {
+        return *m_renderer;
+    }
+
+    Input& Engine::GetInput() const {
+        return *m_input;
     }
 
 } // namespace DA

@@ -34,6 +34,11 @@ namespace DA {
         uint32_t GetHeight() const override { return m_height; }
         void* GetNativeHandle() const override { return m_handle; }
 
+        bool IsKeyDown(int key) const override;
+        bool IsMouseButtonDown(int button) const override;
+        void GetCursorPosition(double& x, double& y) const override;
+        void SetCursorCaptured(bool captured) override;
+
     private:
         // GLFW callbacks (static, they find 'this' through the user pointer).
         static void FramebufferSizeCallback(GLFWwindow* window, int width, int height);
