@@ -307,7 +307,6 @@ namespace DA {
         FrameUniforms uniforms{};
         uniforms.View = m_camera.GetViewMatrix();
         uniforms.Proj = m_camera.GetProjectionMatrix(aspect);
-        uniforms.Proj[1][1] *= -1.0f; // Vulkan clip space has Y pointing down
         uniforms.Time = t;
         frame.Uniform->Write(&uniforms, sizeof(uniforms));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubePipeline->GetLayout(), 0, 1, &frame.Set, 0,

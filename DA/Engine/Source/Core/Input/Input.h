@@ -19,6 +19,9 @@ namespace DA {
     public:
         explicit Input(Window& window);
 
+        Input(const Input&) = delete;
+        Input& operator=(const Input&) = delete;
+
         // Call once per frame, right after the window polled its events.
         void Update();
 
