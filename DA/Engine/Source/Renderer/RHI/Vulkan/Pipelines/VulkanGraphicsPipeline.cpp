@@ -2,6 +2,8 @@
 #include "VulkanGraphicsPipeline.h"
 #include "Renderer/RHI/Vulkan/Core/VulkanDevice.h"
 #include <Renderer/RHI/Vulkan/Resources/VulkanShaderModule.h>
+#include <Core/Paths.h>
+#include <Core/Log.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -20,9 +22,18 @@ namespace DA {
         }
 
         // Shader modules only need to live until the pipeline is created.
-        auto vert = VulkanShaderModule::Create(m_device, desc.VertexShader);
-        auto frag = VulkanShaderModule::Create(m_device, desc.FragmentShader);
-        if (!vert || !frag) return false;
+        /*auto vert = VulkanShaderModule::Create(m_device, desc.VertexShader);
+        auto frag = VulkanShaderModule::Create(m_device, desc.FragmentShader);*/
+
+        const std::string vertexPath = Paths::ResolveShader(desc.Language, desc.VertexShader);
+        const std::string fragmentPath = Paths::ResolveShader(desc.Language, desc.FragmentShader);
+        auto vert = VulkanShaderModule::Create(m_device, vertexPath);
+        auto frag = VulkanShaderModule::Create(m_device, fragmentPath);
+        if (!vert || !frag) {
+            DA_ERROR("Failed to load graphics pipeline shaders (language: {}).",
+                     desc.Language == EShaderLanguage::ESL_GLSL ? "GLSL" : "Slang");
+            return false;
+        }
 
         // Layout
         VkPipelineLayoutCreateInfo layoutInfo{VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO};

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/DA_API.h>
+#include <Core/ShaderLanguage.h>
 
 #include <vulkan/vulkan.h>
 
@@ -15,6 +16,7 @@ namespace DA {
         // Full paths to compiled .spv files (use Paths::ResolveEngine).
         std::string VertexShader;
         std::string FragmentShader;
+        EShaderLanguage Language = EShaderLanguage::ESL_GLSL;
 
         // Must match the attachment you render into (dynamic rendering has no render pass to infer it from).
         VkFormat ColorFormat = VK_FORMAT_UNDEFINED;

@@ -29,6 +29,25 @@ namespace DA {
         return (fs::path(DA_SHADER_OUTPUT_DIR) / (shaderFileName + ".spv")).lexically_normal().generic_string();
     }
 
+    std::string Paths::ResolveShader(EShaderLanguage language, const std::string& shaderFileName) {
+        fs::path relativePath;
+        switch (language) {
+        case DA::EShaderLanguage::ESL_GLSL:
+            relativePath = fs::path("GLSL") / shaderFileName;
+            break;
+        case DA::EShaderLanguage::ESL_SLANG:
+            relativePath = fs::path("Slang") / shaderFileName;
+            relativePath += ".slang";
+            break;
+        default:
+            DA_ERROR("Unknown shader language.");
+            return {};
+        }
+        // Compiled files always have an additional .spv extension.
+        relativePath += ".spv";
+        return (fs::path(DA_SHADER_OUTPUT_DIR) / relativePath).lexically_normal().generic_string();
+    }
+
     std::string Paths::Combine(const fs::path& root, const std::string& relativePath) {
         /*fs::path rel{relativePath};
         if (rel.has_root_name()) return rel.generic_string();

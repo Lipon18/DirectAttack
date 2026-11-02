@@ -143,8 +143,11 @@ namespace DA {
         }
 
         VulkanGraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VertexShader = Paths::ResolveShader("Lit.vert");
-        pipelineDesc.FragmentShader = Paths::ResolveShader("Lit.frag");
+        /*pipelineDesc.VertexShader = Paths::ResolveShader("Slang/Lit.vert");
+        pipelineDesc.FragmentShader = Paths::ResolveShader("Slang/Lit.frag");*/
+        pipelineDesc.Language = EShaderLanguage::ESL_GLSL;
+        pipelineDesc.VertexShader = "lit.vert";
+        pipelineDesc.FragmentShader = "lit.frag";
         pipelineDesc.ColorFormat = m_swapchain.GetFormat();
         pipelineDesc.DepthFormat = m_depth->GetFormat();
         pipelineDesc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;

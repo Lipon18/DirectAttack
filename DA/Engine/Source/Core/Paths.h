@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Core/DA_API.h"
+#include "Core/ShaderLanguage.h"
 
 #include <filesystem>
 #include <string>
@@ -19,6 +20,7 @@ namespace DA {
 
         // Compiled SPIR-V.
         static std::string ResolveShader(const std::string& shaderFileName);
+        static std::string ResolveShader(EShaderLanguage language, const std::string& shaderFileName);
 
         static const std::filesystem::path& GetProjectRoot() { return s_projectRoot; }
         static const std::filesystem::path& GetEngineRoot() { return s_engineRoot; }
