@@ -3,7 +3,7 @@
 #include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
 #include <Renderer/RHI/Vulkan/Memory/VulkanAllocator.h>
 #include <Renderer/RHI/Vulkan/Presentation/VulkanSwapchain.h>
-#include <Renderer/Resources/ImageLoader.h>
+#include <Renderer/Resources/Bitmap.h>
 #include <Core/Log.h>
 #include <Core/Paths.h>
 
@@ -23,6 +23,7 @@ namespace DA {
         struct FrameUniforms {
             glm::mat4 View;
             glm::mat4 Proj;
+            glm::vec4 CameraPos;
             float Time;
             float Pad[3];
         };
@@ -30,7 +31,14 @@ namespace DA {
         // Must match Push in Cube.vert (64 bytes).
         struct PushConstants {
             glm::mat4 Model;
+            glm::vec4 BaseColor;
+            glm::vec4 Emissive;
+            float Matallic;
+            float Roughness;
+            float AlphaCutoff;
+            uint32_t Flags;
         };
+        static_assert(sizeof(PushConstants) == 112);
 
         void TransitionImage(VkCommandBuffer cmd, VkImage image, VkImageLayout oldLayout, VkImageLayout newLayout,
                              VkPipelineStageFlags2 srcStage, VkAccessFlags2 srcAccess, VkPipelineStageFlags2 dstStage,
@@ -54,22 +62,16 @@ namespace DA {
         }
 
         // 64x64 RGBA checkerboard, used when the texture file is missing.
-        ImageData MakeCheckerboard() {
-            ImageData data;
-            data.Width = 64;
-            data.Height = 64;
-            data.Pixels.resize(64 * 64 * 4);
-            for (uint32_t y = 0; y < 64; ++y) {
+        Bitmap MakeCheckerboard() {
+            Bitmap bmp(64, 64);
+            for (uint32_t y = 0; y < 64; ++y)
                 for (uint32_t x = 0; x < 64; ++x) {
                     const uint8_t v = (((x / 8) + (y / 8)) % 2 == 0) ? 230 : 60;
-                    uint8_t* p = &data.Pixels[(y * 64 + x) * 4];
-                    p[0] = v;
-                    p[1] = v;
-                    p[2] = v;
+                    uint8_t* p = bmp.Pixel8(x, y);
+                    p[0] = p[1] = p[2] = v;
                     p[3] = 255;
                 }
-            }
-            return data;
+            return bmp;
         }
     } // namespace
 
@@ -96,15 +98,19 @@ namespace DA {
         m_requestedHeight = m_swapchain.GetExtent().height;
 
         // Texture + sampler (stb gives RGBA, so the format is R8G8B8A8_SRGB).
-        std::optional<ImageData> image = LoadImageFile(Paths::ResolveEngine("Textures/Vulkan_Logo.png"));
+        std::optional<Bitmap> image = Bitmap::FromFile(Paths::ResolveEngine("Textures/Vulkan_Logo.png"));
         if (!image) {
             DA_WARN("Using the checkerboard fallback texture.");
             image = MakeCheckerboard();
         }
-        m_texture = VulkanImage::CreateTexture2D(m_device, m_allocator, VK_FORMAT_R8G8B8A8_SRGB, image->Width,
-                                                 image->Height, image->Pixels.data());
+        m_texture = VulkanImage::CreateTexture2D(m_device, m_allocator, VK_FORMAT_R8G8B8A8_SRGB, image->GetWidth(),
+                                                 image->GetHeight(), image->Data());
         m_sampler = VulkanSampler::Create(m_device);
         if (!m_texture || !m_sampler) return false;
+
+        const uint8_t white[4] = {255, 255, 255, 255};
+        m_whiteTexture = VulkanImage::CreateTexture2D(m_device, m_allocator, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, white);
+        if (!m_whiteTexture) return false;
 
         // Depth image (created before the pipeline, which needs its format).
         m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
@@ -112,19 +118,20 @@ namespace DA {
         if (!m_depth) return false;
 
         // Descriptors: binding 0 = per-frame uniforms, binding 1 = texture.
-        const std::array<VkDescriptorSetLayoutBinding, 2> bindings = {{
-            {0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
-             nullptr},
-            {1, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT, nullptr},
-        }};
-        m_setLayout = VulkanDescriptorSetLayout::Create(m_device, bindings);
-        if (!m_setLayout) return false;
+        const VkDescriptorSetLayoutBinding frameBinding{0, VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, 1,
+                                                        VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT,
+                                                        nullptr};
+        m_setLayout = VulkanDescriptorSetLayout::Create(m_device, std::span(&frameBinding, 1));
 
-        const std::array<VkDescriptorPoolSize, 2> poolSizes = {{
-            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, FramesInFlight},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, FramesInFlight},
-        }};
-        m_descriptorPool = VulkanDescriptorPool::Create(m_device, FramesInFlight, poolSizes);
+        std::array<VkDescriptorSetLayoutBinding, VulkanMaterial::SlotCount> materialBindings{};
+        for (uint32_t i = 0; i < VulkanMaterial::SlotCount; ++i)
+            materialBindings[i] = {i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, 1, VK_SHADER_STAGE_FRAGMENT_BIT,
+                                   nullptr};
+        m_materialLayout = VulkanDescriptorSetLayout::Create(m_device, materialBindings);
+        if (!m_setLayout || !m_materialLayout) return false;
+
+        const VkDescriptorPoolSize poolSize{VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, FramesInFlight};
+        m_descriptorPool = VulkanDescriptorPool::Create(m_device, FramesInFlight, std::span(&poolSize, 1));
         if (!m_descriptorPool) return false;
 
         for (Frame& frame : m_frames) {
@@ -133,21 +140,30 @@ namespace DA {
             frame.Set = m_descriptorPool->Allocate(m_setLayout->GetHandle());
             if (!frame.Uniform || frame.Set == VK_NULL_HANDLE) return false;
             WriteUniformBufferDescriptor(m_device, frame.Set, 0, frame.Uniform->GetHandle(), sizeof(FrameUniforms));
-            WriteCombinedImageSamplerDescriptor(m_device, frame.Set, 1, m_texture->GetView(), m_sampler->GetHandle());
         }
 
         VulkanGraphicsPipelineDesc pipelineDesc;
-        pipelineDesc.VertexShader = Paths::ResolveShader("Cube.vert");
-        pipelineDesc.FragmentShader = Paths::ResolveShader("Cube.frag");
+        pipelineDesc.VertexShader = Paths::ResolveShader("Lit.vert");
+        pipelineDesc.FragmentShader = Paths::ResolveShader("Lit.frag");
         pipelineDesc.ColorFormat = m_swapchain.GetFormat();
         pipelineDesc.DepthFormat = m_depth->GetFormat();
         pipelineDesc.FrontFace = VK_FRONT_FACE_COUNTER_CLOCKWISE;
         pipelineDesc.VertexBindings = {VertexBinding()};
         pipelineDesc.VertexAttributes = VertexAttributes(); // plain assignment: it already returns a vector
-        pipelineDesc.PushConstants = {{VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(PushConstants)}};
-        pipelineDesc.SetLayouts = {m_setLayout->GetHandle()};
+        pipelineDesc.PushConstants = {
+            {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants)}};
+        pipelineDesc.SetLayouts = {m_setLayout->GetHandle(), m_materialLayout->GetHandle()};
         m_cubePipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
-        if (!m_cubePipeline) return false;
+        pipelineDesc.CullMode = VK_CULL_MODE_NONE;
+        m_doubleSidedPipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
+        if (!m_cubePipeline || !m_doubleSidedPipeline) return false;
+
+        // Default material: the logo texture, so cubes/planes and untextured models still draw.
+        MaterialParams defaultParams;
+        std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount> defaultTextures{};
+        defaultTextures[VulkanMaterial::BaseColor] = m_texture;
+        m_defaultMaterial = CreateMaterial(defaultParams, defaultTextures, false);
+        if (!m_defaultMaterial) return false;
 
         m_clock.Reset();
         return CreateRenderFinishedSemaphores();
@@ -181,8 +197,80 @@ namespace DA {
         return CreateRenderFinishedSemaphores();
     }
 
+    VkDescriptorSet VulkanRenderer::AllocateMaterialSet() {
+        constexpr uint32_t SetsPerPool = 256;
+        if (m_materialPools.empty() || m_materialPoolUsed >= SetsPerPool) {
+            const VkDescriptorPoolSize size{VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                                            SetsPerPool * VulkanMaterial::SlotCount};
+            auto pool = VulkanDescriptorPool::Create(m_device, SetsPerPool, std::span(&size, 1));
+            if (!pool) return VK_NULL_HANDLE;
+            m_materialPools.push_back(std::move(pool));
+            m_materialPoolUsed = 0;
+        }
+        ++m_materialPoolUsed;
+        return m_materialPools.back()->Allocate(m_materialLayout->GetHandle());
+    }
+
     std::unique_ptr<VulkanMesh> VulkanRenderer::CreateMesh(const MeshData& data) const {
         return VulkanMesh::Create(m_device, m_allocator, data.Vertices, data.Indices);
+    }
+
+    std::unique_ptr<VulkanMaterial> VulkanRenderer::CreateMaterial(
+        const MaterialParams& params,
+        const std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount>& textures, bool doubleSided) {
+        auto material = std::make_unique<VulkanMaterial>();
+        material->Params = params;
+        material->DoubleSided = doubleSided;
+        material->Set = AllocateMaterialSet();
+        if (material->Set == VK_NULL_HANDLE) return nullptr;
+        for (uint32_t i = 0; i < VulkanMaterial::SlotCount; ++i) {
+            material->Textures[i] = textures[i] ? textures[i] : m_whiteTexture;
+            WriteCombinedImageSamplerDescriptor(m_device, material->Set, i, material->Textures[i]->GetView(),
+                                                m_sampler->GetHandle());
+        }
+        return material;
+    }
+
+    std::unique_ptr<VulkanModel> VulkanRenderer::CreateModel(ModelData&& data, const std::string& sourcePath) {
+        auto loadTexture = [&](int32_t image, bool srgb) -> std::shared_ptr<VulkanImage> {
+            if (image < 0 || static_cast<size_t>(image) >= data.Images.size()) return nullptr;
+            const std::string key = sourcePath + "#" + std::to_string(image) + (srgb ? "|srgb" : "|linear");
+            return m_textureCache.GetOrCreate(key, [&]() -> std::shared_ptr<VulkanImage> {
+                const ImageSourceData& src = data.Images[image];
+                auto pixels =
+                    src.Encoded.empty() ? Bitmap::FromFile(src.Path) : Bitmap::FromMemory(src.Encoded, src.Name);
+                if (!pixels) return nullptr;
+                return VulkanImage::CreateTexture2D(m_device, m_allocator,
+                                                    srgb ? VK_FORMAT_R8G8B8A8_SRGB : VK_FORMAT_R8G8B8A8_UNORM,
+                                                    pixels->GetWidth(), pixels->GetHeight(), pixels->Data());
+            });
+        };
+
+        std::vector<std::unique_ptr<VulkanMaterial>> materials;
+        materials.reserve(data.Materials.size());
+        for (const MaterialData& md : data.Materials) {
+            std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount> tex{};
+            tex[VulkanMaterial::BaseColor] = loadTexture(md.BaseColorImage, true);
+            tex[VulkanMaterial::Normal] = loadTexture(md.NormalImage, false);
+            tex[VulkanMaterial::MetallicRoughness] = loadTexture(md.MetallicRoughnessImage, false);
+            tex[VulkanMaterial::Occlusion] = loadTexture(md.OcclusionImage, false);
+            tex[VulkanMaterial::Emissive] = loadTexture(md.EmissiveImage, true);
+
+            MaterialParams p;
+            p.BaseColor = md.BaseColorFactor;
+            p.Emissive = glm::vec4(md.EmissiveFactor, 0.0f);
+            p.Metallic = md.Metallic;
+            p.Roughness = md.Roughness;
+            p.AlphaCutoff = md.AlphaCutoff;
+            if (tex[VulkanMaterial::Normal]) p.Flags |= MaterialParams::FlagNormalMap;
+            // Blend is approximated by a cutout until there is a transparent pass.
+            if (md.Alpha != EAlphaMode::EAM_OPAQUE) p.Flags |= MaterialParams::FlagAlphaMask;
+
+            auto material = CreateMaterial(p, tex, md.DoubleSided);
+            if (!material) return nullptr;
+            materials.push_back(std::move(material));
+        }
+        return VulkanModel::Create(m_device, m_allocator, std::move(data), std::move(materials));
     }
 
     bool VulkanRenderer::RenderFrame(uint32_t width, uint32_t height) {
@@ -253,8 +341,8 @@ namespace DA {
         const VkImage image = m_swapchain.GetImage(imageIndex);
         const VkExtent2D extent = m_swapchain.GetExtent();
 
-        // Swapchain image: UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL. The source stage matches the semaphore wait stage,
-        // so the transition cannot run before the image is actually available.
+        // Swapchain image: UNDEFINED -> COLOR_ATTACHMENT_OPTIMAL. The source stage matches the semaphore wait
+        // stage, so the transition cannot run before the image is actually available.
         TransitionImage(cmd, image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_NONE,
                         VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT);
@@ -291,8 +379,6 @@ namespace DA {
 
         vkCmdBeginRendering(cmd, &rendering);
 
-        m_cubePipeline->Bind(cmd);
-
         const VkViewport viewport{0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height),
                                   0.0f, 1.0f};
         const VkRect2D scissor{{0, 0}, extent};
@@ -308,15 +394,36 @@ namespace DA {
         uniforms.View = m_camera.GetViewMatrix();
         uniforms.Proj = m_camera.GetProjectionMatrix(aspect);
         uniforms.Time = t;
+        uniforms.CameraPos = glm::vec4(m_camera.GetPosition(), 1.0f);
         frame.Uniform->Write(&uniforms, sizeof(uniforms));
         vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubePipeline->GetLayout(), 0, 1, &frame.Set, 0,
                                 nullptr);
 
+        const VulkanGraphicsPipeline* boundPipeline = nullptr;
+        const VulkanMaterial* boundMaterial = nullptr;
+        const VulkanMesh* boundMesh = nullptr;
         for (const DrawItem& item : m_drawList) {
             if (!item.Mesh) continue;
-            PushConstants push{item.Model};
-            vkCmdPushConstants(cmd, m_cubePipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT, 0, sizeof(push), &push);
-            item.Mesh->Bind(cmd);
+            const auto* mat = item.Material ? item.Material : m_defaultMaterial.get();
+            const auto* pipeline = mat->DoubleSided ? m_doubleSidedPipeline.get() : m_cubePipeline.get();
+            if (pipeline != boundPipeline) {
+                pipeline->Bind(cmd);
+                boundPipeline = pipeline;
+            }
+            if (mat != boundMaterial) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->GetLayout(), 1, 1, &mat->Set, 0,
+                                        nullptr);
+                boundMaterial = mat;
+            }
+            const auto& mp = mat->Params;
+            const PushConstants push{item.Model,   mp.BaseColor,   mp.Emissive, mp.Metallic,
+                                      mp.Roughness, mp.AlphaCutoff, mp.Flags};
+            vkCmdPushConstants(cmd, pipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
+                               sizeof(push), &push);
+            if (item.Mesh != boundMesh) {
+                item.Mesh->Bind(cmd);
+                boundMesh = item.Mesh;
+            }
             item.Mesh->Draw(cmd);
         }
 
@@ -329,7 +436,8 @@ namespace DA {
     }
 
     VulkanRenderer::~VulkanRenderer() {
-        // Nothing may still be using the semaphores, fences, command buffers or descriptors when they are destroyed.
+        // Nothing may still be using the semaphores, fences, command buffers or descriptors when they are
+        // destroyed.
         m_device.WaitIdle();
     }
 } // namespace DA

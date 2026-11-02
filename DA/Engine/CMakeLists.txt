@@ -52,6 +52,7 @@ target_link_libraries(DirectAttack
         hangar::glm
     PRIVATE
         hangar::stb_image
+        hangar::cgltf
 )
 
 # PUBLIC: consumers (Testbed) compile the logging macros too, so they need the

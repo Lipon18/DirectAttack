@@ -64,3 +64,9 @@ headers = ["include"]
 git = "https://github.com/nothings/stb.git"
 tag = "master"
 headers = ["."]
+
+# cgltf
+[dependencies.cgltf]
+git = "https://github.com/jkuhlmann/cgltf.git"
+tag = "v1.15"
+headers = ["cgltf.h"]

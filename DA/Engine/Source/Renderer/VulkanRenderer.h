@@ -11,6 +11,9 @@
 #include <Renderer/RHI/Vulkan/Commands/VulkanSync.h>
 #include <Renderer/RHI/Vulkan/Resources/VulkanImage.h>
 #include <Renderer/Resources/VulkanMesh.h>
+#include <Renderer/Resources/VulkanModel.h>
+#include <Renderer/Resources/TextureCache.h>
+#include <Renderer/Resources/VulkanMaterial.h>
 
 #include <vulkan/vulkan.h>
 
@@ -34,6 +37,7 @@ namespace DA {
         struct DrawItem {
             const VulkanMesh* Mesh = nullptr;
             glm::mat4 Model{1.0f};
+            const VulkanMaterial* Material = nullptr;
         };
 
         // The device and swapchain must outlive the renderer (declare the renderer after them).
@@ -48,6 +52,19 @@ namespace DA {
 
         // Convenience so game code does not need the device or allocator.
         std::unique_ptr<VulkanMesh> CreateMesh(const MeshData& data) const;
+
+        // Queues every instance of a model. `root` is applied on top of each node's own transform.
+        void Submit(const VulkanModel& model, const glm::mat4& root = glm::mat4(1.0f)) {
+            m_drawList.reserve(m_drawList.size() + model.GetInstances().size());
+            for (const VulkanModel::Instance& inst : model.GetInstances()) {
+                m_drawList.push_back({inst.Mesh, root * inst.Transform, inst.Material});
+            }
+        }
+
+        std::unique_ptr<VulkanModel> CreateModel(ModelData&& data, const std::string& sourcePath);
+        std::unique_ptr<VulkanMaterial> CreateMaterial(
+            const MaterialParams& params,
+            const std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount>& textures, bool doubleSided);
 
         // Renders one frame. Handles resize and minimize internally.
         // Returns false only on an unrecoverable error.
@@ -76,6 +93,8 @@ namespace DA {
         bool Recreate(uint32_t width, uint32_t height);
         void Record(VkCommandBuffer cmd, uint32_t imageIndex);
 
+        VkDescriptorSet AllocateMaterialSet();
+
         const VulkanDevice& m_device;
         const VulkanAllocator& m_allocator;
         VulkanSwapchain& m_swapchain;
@@ -88,18 +107,25 @@ namespace DA {
         uint32_t m_requestedWidth = 0;
         uint32_t m_requestedHeight = 0;
 
-        std::array<float, 4> m_clearColor = {1.0f, 0.0f, 0.0f, 1.0f};
+        std::array<float, 4> m_clearColor = {0.16f, 0.22f, 0.30f, 1.0f};
 
         std::vector<DrawItem> m_drawList;
 
-        std::unique_ptr<VulkanImage> m_texture;
+        std::shared_ptr<VulkanImage> m_texture;
+        std::shared_ptr<VulkanImage> m_whiteTexture;
         std::unique_ptr<VulkanSampler> m_sampler;
         std::unique_ptr<VulkanImage> m_depth;
         std::unique_ptr<VulkanDescriptorSetLayout> m_setLayout;
+        std::unique_ptr<VulkanDescriptorSetLayout> m_materialLayout;
         std::unique_ptr<VulkanDescriptorPool> m_descriptorPool;
+        std::vector<std::unique_ptr<VulkanDescriptorPool>> m_materialPools;
+        uint32_t m_materialPoolUsed = 0;
         std::unique_ptr<VulkanGraphicsPipeline> m_cubePipeline;
-        Clock m_clock;
+        std::unique_ptr<VulkanGraphicsPipeline> m_doubleSidedPipeline;
+        TextureCache m_textureCache;
+        std::unique_ptr<VulkanMaterial> m_defaultMaterial;
 
         Camera m_camera;
+        Clock m_clock;
     };
 } // namespace DA

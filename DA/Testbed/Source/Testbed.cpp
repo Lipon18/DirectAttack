@@ -8,10 +8,13 @@
 
 #include <Core/Entry.h>
 #include <Core/Input/Input.h>
+#include <Core/Paths.h>
 #include <Renderer/Resources/Primitives.h>
 #include <Renderer/VulkanRenderer.h>
 #include <Scene/Camera.h>
 #include <Scene/FlyCameraController.h>
+#include <Renderer/Resources/gltfLoader.h>
+#include <Renderer/Resources/VulkanModel.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -27,6 +30,11 @@ protected:
         auto& renderer = GetEngine().GetRenderer();
         m_cube = renderer.CreateMesh(DA::MakeCube());
         m_plane = renderer.CreateMesh(DA::MakePlane(8.0f , 8.0f));
+        const std::string modelPath = DA::Paths::ResolveEngine("Models/DamagedHelmet.glb");
+        if (auto data = DA::Loadgltf(modelPath)) {
+            m_modelFit = DA::FitToSize(data->Bounds, 2.0f);
+            m_model = renderer.CreateModel(std::move(*data), modelPath);
+        }
         if(!m_cube || !m_plane) return false;
 
         auto& input = GetEngine().GetInput();
@@ -39,6 +47,7 @@ protected:
         DA_INFO("Testbed initialized. Click to capture the mouse, WASD/QE to move, Shift to sprint, Esc to release.");
         return true;
     }
+
     void OnUpdate(float deltaSeconds) override {
         m_time += deltaSeconds;
         auto& renderer = GetEngine().GetRenderer();
@@ -48,6 +57,12 @@ protected:
         if (input.IsButtonPressed("ReleaseCursor")) input.SetCursorCaptured(false);
         if(input.IsCursorCaptured()) m_fly.Update(m_camera, input, deltaSeconds);
         renderer.SetCamera(m_camera);
+
+        if (m_model) {
+            glm::mat4 root = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, -3.0f));
+            root = glm::rotate(root, m_time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f)) * m_modelFit;
+            renderer.Submit(*m_model, root);
+        }
 
         // Floor, just below the cubes.
         renderer.Submit({m_plane.get(), glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, 0.0f))});
@@ -72,6 +87,7 @@ protected:
          // Release GPU resources while the engine's device and allocator still exist.
         m_cube.reset();
         m_plane.reset();
+        m_model.reset();
         DA_INFO("Testbed shutting down.");
     }
     // clang-format on
@@ -79,9 +95,11 @@ protected:
 private:
     std::unique_ptr<DA::VulkanMesh> m_cube;
     std::unique_ptr<DA::VulkanMesh> m_plane;
+    std::unique_ptr<DA::VulkanModel> m_model;
     DA::Camera m_camera;
     DA::FlyCameraController m_fly;
     float m_time = 0.0f;
+    glm::mat4 m_modelFit{1.0f};
 };
 
 std::unique_ptr<DA::Application> DA::CreateApplication() {
