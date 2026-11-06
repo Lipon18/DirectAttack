@@ -23,6 +23,7 @@ namespace DA {
     class VulkanSwapchain;
     class VulkanRenderer;
     class VulkanAllocator;
+    class ThreadPool;
 
     class DA_API Engine {
     public:
@@ -52,9 +53,12 @@ namespace DA {
 
         Input& GetInput() const;
 
+        ThreadPool& GetJobs() const;
+
     private:
         static Engine* s_instance;
 
+        std::unique_ptr<ThreadPool> m_jobs;
         std::unique_ptr<Window> m_window;
         std::unique_ptr<Input> m_input;
         std::unique_ptr<VulkanInstance> m_vkInstance;

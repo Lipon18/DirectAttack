@@ -4,6 +4,7 @@
 #include "Paths.h"
 #include "Log.h"
 #include "Input/Input.h"
+#include "Core/Jobs/ThreadPool.h"
 #include <Platform/Window.h>
 #include <Renderer/RHI/Vulkan/Core/VulkanInstance.h>
 #include <Renderer/RHI/Vulkan/Core/VulkanSurface.h>
@@ -44,6 +45,9 @@ namespace DA {
 
         Paths::Init(DA_ENGINE_CONTENT_DIR);
 
+        m_jobs = std::make_unique<ThreadPool>();
+        DA_INFO("Job system: {} worker threads.", m_jobs->GetThreadCount());
+
         DA_INFO("{} Engine v{}", Config::EngineName, Config::Version);
 
         WindowDesc desc;
@@ -62,9 +66,6 @@ namespace DA {
         // Window close events stop the engine loop.
         window->OnClose = [this]() { RequestClose(); };
 
-        // Store the window in the application engine state in a later
-        // extension. For now, the engine owns it in this local implementation.
-        // See the member declaration below for the persistent window.
         m_window = std::move(window);
 
         m_input = std::make_unique<Input>(*m_window);
@@ -108,8 +109,8 @@ namespace DA {
                                                 m_window->GetHeight());
         if (!m_vkSwapchain) return false;
 
-        m_renderer = VulkanRenderer::Create(*m_vkDevice, *m_vkAllocator, *m_vkSwapchain);
-        if (!m_renderer) return false; 
+        m_renderer = VulkanRenderer::Create(*m_vkDevice, *m_vkAllocator, *m_vkSwapchain, *m_jobs);
+        if (!m_renderer) return false;
 
         if (!m_app->OnInit()) {
             DA_ERROR("Application initialization failed.");
@@ -172,6 +173,10 @@ namespace DA {
 
     Input& Engine::GetInput() const {
         return *m_input;
+    }
+
+    ThreadPool& Engine::GetJobs() const {
+        return *m_jobs;
     }
 
 } // namespace DA

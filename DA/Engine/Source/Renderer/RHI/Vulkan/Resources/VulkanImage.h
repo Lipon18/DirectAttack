@@ -13,6 +13,7 @@ VK_DEFINE_HANDLE(VmaAllocation)
 namespace DA {
     class VulkanDevice;
     class VulkanAllocator;
+    struct TextureData;
 
     class DA_API VulkanImage {
     public:
@@ -22,6 +23,10 @@ namespace DA {
         static std::unique_ptr<VulkanImage> CreateTexture2D(const VulkanDevice& device,
                                                             const VulkanAllocator& allocator, VkFormat format,
                                                             uint32_t width, uint32_t height, const void* pixels);
+
+        static std::unique_ptr<VulkanImage> CreateFromTexture(const VulkanDevice& device,
+                                                              const VulkanAllocator& allocator,
+                                                              const TextureData& tex);
 
         // Depth attachment image (format from the device), cleared every frame. Layout starts UNDEFINED.
         static std::unique_ptr<VulkanImage> CreateDepth(const VulkanDevice& device, const VulkanAllocator& allocator,

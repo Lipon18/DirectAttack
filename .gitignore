@@ -69,7 +69,8 @@ Testing/
 
 .vscode/
 
-automation/target/
+Automation/target/
+**/target/
 
 *.spv
 

@@ -5,6 +5,7 @@
 #include <Renderer/RHI/Vulkan/Commands/VulkanCommandBuffer.h>
 #include <Renderer/RHI/Vulkan/Commands/VulkanCommandPool.h>
 #include <Renderer/RHI/Vulkan/Core/VulkanDevice.h>
+#include <Renderer/Resources/TextureData.h>
 
 #include <vulkan/vk_enum_string_helper.h>
 
@@ -132,6 +133,95 @@ namespace DA {
             return nullptr;
         }
         DA_INFO("Texture created: {}x{}, {} mip levels.", width, height, mips);
+        return image;
+    }
+
+    std::unique_ptr<VulkanImage> VulkanImage::CreateFromTexture(const VulkanDevice& device,
+                                                                const VulkanAllocator& allocator,
+                                                                const TextureData& tex) {
+        if (tex.Levels.empty() || tex.Data.empty() || tex.Width == 0 || tex.Height == 0) {
+            DA_ERROR("CreateFromTexture: empty texture.");
+            return nullptr;
+        }
+        if (!device.IsFormatSampleable(tex.Format)) {
+            DA_WARN("Format {} is not supported by this GPU.", string_VkFormat(tex.Format));
+            return nullptr;
+        }
+
+        auto staging = VulkanBuffer::CreateHostVisible(allocator, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, tex.Data.size());
+        if (!staging || !staging->Write(tex.Data.data(), tex.Data.size())) return nullptr;
+
+        std::unique_ptr<VulkanImage> image(new VulkanImage(device));
+        image->m_width = tex.Width;
+        image->m_height = tex.Height;
+        image->m_format = tex.Format;
+        image->m_mipLevels = static_cast<uint32_t>(tex.Levels.size());
+
+        VkImageCreateInfo info{VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO};
+        info.imageType = VK_IMAGE_TYPE_2D;
+        info.format = tex.Format;
+        info.extent = {tex.Width, tex.Height, 1};
+        info.mipLevels = image->m_mipLevels;
+        info.arrayLayers = 1;
+        info.samples = VK_SAMPLE_COUNT_1_BIT;
+        info.tiling = VK_IMAGE_TILING_OPTIMAL;
+        info.usage = VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        VmaAllocationCreateInfo allocInfo{};
+        allocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
+        if (VkResult r = vmaCreateImage(allocator.GetHandle(), &info, &allocInfo, &image->m_image, &image->m_allocation,
+                                        nullptr);
+            r != VK_SUCCESS) {
+            DA_ERROR("vmaCreateImage failed: {}", string_VkResult(r));
+            image->m_image = VK_NULL_HANDLE;
+            return nullptr;
+        }
+        image->m_allocator = allocator.GetHandle();
+
+        VkImageViewCreateInfo viewInfo{VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO};
+        viewInfo.image = image->m_image;
+        viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        viewInfo.format = tex.Format;
+        viewInfo.subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, image->m_mipLevels, 0, 1};
+        if (VkResult r = vkCreateImageView(device.GetHandle(), &viewInfo, nullptr, &image->m_view); r != VK_SUCCESS) {
+            DA_ERROR("vkCreateImageView failed: {}", string_VkResult(r));
+            image->m_view = VK_NULL_HANDLE;
+            return nullptr;
+        }
+
+        auto pool = VulkanCommandPool::Create(device, device.GetGraphicsFamily(), VK_COMMAND_POOL_CREATE_TRANSIENT_BIT);
+        if (!pool) return nullptr;
+        auto cmd = VulkanCommandBuffer::Create(device, *pool);
+        if (!cmd || !cmd->Begin()) return nullptr;
+        const VkCommandBuffer c = cmd->GetHandle();
+
+        ImageBarrier(c, image->m_image, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                     VK_PIPELINE_STAGE_2_NONE, VK_ACCESS_2_NONE, VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT,
+                     VK_ACCESS_2_TRANSFER_WRITE_BIT, 0, image->m_mipLevels);
+
+        std::vector<VkBufferImageCopy> regions(image->m_mipLevels);
+        for (uint32_t i = 0; i < image->m_mipLevels; ++i) {
+            VkBufferImageCopy& r = regions[i];
+            r.bufferOffset = tex.Levels[i].Offset;
+            r.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, i, 0, 1};
+            r.imageExtent = {std::max(1u, tex.Width >> i), std::max(1u, tex.Height >> i), 1};
+        }
+        vkCmdCopyBufferToImage(c, staging->GetHandle(), image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<uint32_t>(regions.size()), regions.data());
+
+        ImageBarrier(c, image->m_image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                     VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT, VK_ACCESS_2_TRANSFER_WRITE_BIT,
+                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, 0,
+                     image->m_mipLevels);
+
+        if (!cmd->SubmitAndWait(device.GetGraphicsQueue())) {
+            DA_ERROR("Texture upload failed.");
+            return nullptr;
+        }
+        DA_INFO("Texture created: {}x{}, {} mip levels, {}, {} KB.", tex.Width, tex.Height, image->m_mipLevels,
+                string_VkFormat(tex.Format), tex.Data.size() / 1024);
         return image;
     }
 

@@ -34,6 +34,8 @@ namespace DA {
         // Blocks until the GPU has finished all submitted work.
         void WaitIdle() const;
 
+        bool IsFormatSampleable(VkFormat format) const;
+
     private:
         VulkanDevice() = default;
         bool Init(const VulkanPhysicalDevice& physicalDevice);
@@ -47,5 +49,7 @@ namespace DA {
         VkQueue m_presentQueue = VK_NULL_HANDLE;
         uint32_t m_graphicsFamily = UINT32_MAX;
         uint32_t m_presentFamily = UINT32_MAX;
+
+        VkPhysicalDevice m_physicalDevice = VK_NULL_HANDLE;
     };
 } // namespace DA

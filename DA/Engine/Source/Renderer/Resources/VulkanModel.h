@@ -26,7 +26,14 @@ namespace DA {
 
         // Consumes `data`: each primitive's CPU copy is freed right after its upload to keep peak memory low.
         static std::unique_ptr<VulkanModel> Create(const VulkanDevice& device, const VulkanAllocator& allocator,
-                                                   ModelData&& data, std::vector<std::unique_ptr<VulkanMaterial>> materials);
+                                                   ModelData&& data,
+                                                   std::vector<std::unique_ptr<VulkanMaterial>> materials);
+
+        // Builds a model from already-uploaded parts (used by the async loader).
+        static std::unique_ptr<VulkanModel> Assemble(std::vector<std::unique_ptr<VulkanMesh>> meshes,
+                                                     std::vector<std::unique_ptr<VulkanMaterial>> materials,
+                                                     std::span<const int32_t> primitiveMaterial,
+                                                     std::span<const ModelInstanceData> instances, const AABB& bounds);
 
         VulkanModel(const VulkanModel&) = delete;
         VulkanModel& operator=(const VulkanModel&) = delete;

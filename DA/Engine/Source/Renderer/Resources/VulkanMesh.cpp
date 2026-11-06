@@ -12,6 +12,9 @@ namespace DA {
         }
 
         std::unique_ptr<VulkanMesh> mesh(new VulkanMesh());
+        // clang-format off
+        for (const Vertex& v : vertices) mesh->m_bounds.Expand(v.Position);
+        // clang-format on
         mesh->m_vertexBuffer = VulkanBuffer::CreateDeviceLocal(device, allocator, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT,
                                                                vertices.data(), vertices.size_bytes());
         mesh->m_indexBuffer = VulkanBuffer::CreateDeviceLocal(device, allocator, VK_BUFFER_USAGE_INDEX_BUFFER_BIT,

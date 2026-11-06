@@ -2,6 +2,7 @@
 
 #include <Core/DA_API.h>
 #include "Vertex.h"
+#include "AABB.h"
 #include <Renderer/RHI/Vulkan/Memory/VulkanBuffer.h>
 
 #include <vulkan/vulkan.h>
@@ -28,6 +29,8 @@ namespace DA {
 
         uint32_t GetIndexCount() const { return m_indexCount; }
 
+        const AABB& GetBounds() const { return m_bounds; }
+
     private:
         VulkanMesh() = default;
 
@@ -35,6 +38,7 @@ namespace DA {
         std::unique_ptr<VulkanBuffer> m_vertexBuffer;
         std::unique_ptr<VulkanBuffer> m_indexBuffer;
         uint32_t m_indexCount = 0;
-    };
 
+        AABB m_bounds;
+    };
 } // namespace DA

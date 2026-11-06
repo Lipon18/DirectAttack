@@ -1,11 +1,3 @@
-/**
- * @file Testbed.h
- * @brief TODO: describe this file.
- *
- * Copyright (c) 2026 YourName
- * SPDX-License-Identifier: MIT
- */
-
 #include <Core/Entry.h>
 #include <Core/Input/Input.h>
 #include <Core/Paths.h>
@@ -15,6 +7,8 @@
 #include <Scene/FlyCameraController.h>
 #include <Renderer/Resources/gltfLoader.h>
 #include <Renderer/Resources/VulkanModel.h>
+#include <Renderer/Resources/ModelAsset.h>
+#include <Renderer/Resources/SkyboxMaterial.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 
@@ -30,11 +24,13 @@ protected:
         auto& renderer = GetEngine().GetRenderer();
         m_cube = renderer.CreateMesh(DA::MakeCube());
         m_plane = renderer.CreateMesh(DA::MakePlane(8.0f , 8.0f));
-        const std::string modelPath = DA::Paths::ResolveEngine("Models/DamagedHelmet.glb");
-        if (auto data = DA::Loadgltf(modelPath)) {
-            m_modelFit = DA::FitToSize(data->Bounds, 2.0f);
-            m_model = renderer.CreateModel(std::move(*data), modelPath);
+        DA::CubeMapFaces faces;
+        const auto sky = [](const char* f){return DA::Paths::ResolveEngine(std::string("Textures/Skybox/") + f);};
+        faces.Paths = {sky("right.png"), sky("left.png"), sky("top.png"), sky("bottom.png"), sky("front.png"), sky("back.png")};
+        if (auto cube = renderer.CreateCubeMap(faces)) {
+            renderer.SetSkybox(std::make_unique<DA::SkyboxMaterial>(std::move(cube)));
         }
+        m_helmet = renderer.LoadModelAsync(DA::Paths::ResolveEngine("Models/DamagedHelmet.gltf"));
         if(!m_cube || !m_plane) return false;
 
         auto& input = GetEngine().GetInput();
@@ -53,41 +49,45 @@ protected:
         auto& renderer = GetEngine().GetRenderer();
         auto& input = GetEngine().GetInput();
 
+        /*m_logTimer += deltaSeconds;
+        if (m_logTimer >= 1.0f) {
+            m_logTimer -= 1.0f;
+            DA_INFO("Renderer Stats | Drawn: {} | Culled: {}", renderer.GetLastDrawn(), renderer.GetLastCulled());
+        }*/
+
         if(!input.IsCursorCaptured() && input.IsMousePressed(DA::MouseButton::Left)) input.SetCursorCaptured(true);
         if (input.IsButtonPressed("ReleaseCursor")) input.SetCursorCaptured(false);
         if(input.IsCursorCaptured()) m_fly.Update(m_camera, input, deltaSeconds);
         renderer.SetCamera(m_camera);
 
-        if (m_model) {
-            glm::mat4 root = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, -3.0f));
-            root = glm::rotate(root, m_time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f)) * m_modelFit;
-            renderer.Submit(*m_model, root);
+        // Helmet
+        if (m_helmet && m_helmet->IsReady()) {
+            if (!m_fitReady) {
+                m_modelFit = DA::FitToSize(m_helmet->GetBounds(), 2.0f);
+                m_fitReady = true;
+            }
+            glm::mat4 helmetTransform  = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, -3.0f));
+            helmetTransform = helmetTransform * glm::rotate(glm::mat4(1.0f), m_time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+            helmetTransform  = helmetTransform  * m_modelFit;
+            //root = glm::rotate(root, m_time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f)) * m_modelFit;
+            renderer.Submit(*m_helmet->Get(), /*root*/ helmetTransform );
         }
 
         // Floor, just below the cubes.
-        renderer.Submit({m_plane.get(), glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, 0.0f))});
+        glm::mat4 floorTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, -0.5f, 0.0f));
+        renderer.Submit({m_plane.get(), floorTransform});
 
-        // Center cube, spinning.
-        glm::mat4 center = glm::rotate(glm::mat4(1.0f), m_time * 0.8f, glm::normalize(glm::vec3(0.3f, 1.0f, 0.2f)));
-        renderer.Submit({m_cube.get(), center});
-
-        // Left cube, fixed position, slow spin.
-        glm::mat4 left = glm::translate(glm::mat4(1.0f), glm::vec3(-2.0f, 0.0f, 0.0f));
-        left = glm::rotate(left, m_time * 0.4f, glm::vec3(0.0f, 1.0f, 0.0f));
-        renderer.Submit({m_cube.get(), left});
-
-        // Small cube orbiting through the center one: the occlusion test for the depth buffer.
-        glm::mat4 orbit = glm::translate(glm::mat4(1.0f),
-                                         glm::vec3(std::cos(m_time) * 0.9f, 0.2f, std::sin(m_time) * 0.9f));
-        orbit = glm::scale(glm::rotate(orbit, m_time * 2.0f, glm::vec3(1.0f, 0.0f, 0.0f)), glm::vec3(0.45f));
-        renderer.Submit({m_cube.get(), orbit});
+        // Cube
+        glm::mat4 cubeTransform = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 0.5f, 0.0f));
+        cubeTransform = glm::rotate(cubeTransform, m_time * 0.5f, glm::vec3(0.0f, 1.0f, 0.0f));
+        renderer.Submit({m_cube.get(), cubeTransform});
     }
 
     void OnShutdown() override { 
          // Release GPU resources while the engine's device and allocator still exist.
         m_cube.reset();
         m_plane.reset();
-        m_model.reset();
+        m_helmet.reset();
         DA_INFO("Testbed shutting down.");
     }
     // clang-format on
@@ -95,11 +95,17 @@ protected:
 private:
     std::unique_ptr<DA::VulkanMesh> m_cube;
     std::unique_ptr<DA::VulkanMesh> m_plane;
-    std::unique_ptr<DA::VulkanModel> m_model;
+    std::shared_ptr<DA::ModelAsset> m_helmet;
     DA::Camera m_camera;
     DA::FlyCameraController m_fly;
     float m_time = 0.0f;
     glm::mat4 m_modelFit{1.0f};
+    bool m_fitReady = false;
+
+    std::shared_ptr<DA::VulkanImage> m_cubeTexture;
+    std::shared_ptr<DA::VulkanImage> m_floorTexture;
+
+    // float m_logTimer = 0.0f;
 };
 
 std::unique_ptr<DA::Application> DA::CreateApplication() {

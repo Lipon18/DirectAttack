@@ -36,4 +36,24 @@ namespace DA {
         model->m_bounds = data.Bounds;
         return model;
     }
+
+    std::unique_ptr<VulkanModel> VulkanModel::Assemble(std::vector<std::unique_ptr<VulkanMesh>> meshes,
+                                                       std::vector<std::unique_ptr<VulkanMaterial>> materials,
+                                                       std::span<const int32_t> primitiveMaterial,
+                                                       std::span<const ModelInstanceData> instances,
+                                                       const AABB& bounds) {
+        std::unique_ptr<VulkanModel> model(new VulkanModel());
+        model->m_meshes = std::move(meshes);
+        model->m_materials = std::move(materials);
+        model->m_instances.reserve(instances.size());
+        for (const ModelInstanceData& inst : instances) {
+            const int32_t mi = primitiveMaterial[inst.Primitive];
+            const VulkanMaterial* material = (mi >= 0 && static_cast<size_t>(mi) < model->m_materials.size())
+                                                 ? model->m_materials[mi].get()
+                                                 : nullptr;
+            model->m_instances.push_back({model->m_meshes[inst.Primitive].get(), material, inst.Transform});
+        }
+        model->m_bounds = bounds;
+        return model;
+    }
 } // namespace DA

@@ -20,6 +20,7 @@ namespace DA {
         const VulkanQueueFamilies& families = physicalDevice.GetQueueFamilies();
         m_graphicsFamily = families.Graphics;
         m_presentFamily = families.Present;
+        m_physicalDevice = physicalDevice.GetHandle();
 
         // Depth format: first one the GPU can use as a depth attachment.
         constexpr std::array depthCandidates = {VK_FORMAT_D32_SFLOAT, VK_FORMAT_D32_SFLOAT_S8_UINT,
@@ -51,13 +52,16 @@ namespace DA {
         }
 
         // What the GPU supports (for optional core features).
+        VkPhysicalDeviceVulkan13Features supported13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
         VkPhysicalDeviceFeatures2 supported{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+        supported.pNext = &supported13;
         vkGetPhysicalDeviceFeatures2(physicalDevice.GetHandle(), &supported);
 
         // What we turn on. PhysicalDevice already guaranteed the required ones exist.
         VkPhysicalDeviceVulkan13Features features13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
         features13.dynamicRendering = VK_TRUE;
         features13.synchronization2 = VK_TRUE;
+        features13.shaderDemoteToHelperInvocation = supported13.shaderDemoteToHelperInvocation;
         VkPhysicalDeviceFeatures2 enabled{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
         enabled.pNext = &features13;
         enabled.features.samplerAnisotropy = supported.features.samplerAnisotropy;
@@ -87,6 +91,14 @@ namespace DA {
 
     void VulkanDevice::WaitIdle() const {
         if (m_device != VK_NULL_HANDLE) vkDeviceWaitIdle(m_device);
+    }
+
+    bool VulkanDevice::IsFormatSampleable(VkFormat format) const {
+        VkFormatProperties props{};
+        vkGetPhysicalDeviceFormatProperties(m_physicalDevice, format, &props);
+        constexpr VkFormatFeatureFlags need =
+            VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT | VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
+        return (props.optimalTilingFeatures & need) == need;
     }
 
     VulkanDevice::~VulkanDevice() {
