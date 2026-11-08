@@ -6,27 +6,36 @@ layout(location = 2) in vec2 vUV;
 layout(location = 3) in vec3 vColor;
 layout(location = 0) out vec4 outColor;
 
+const int MAX_LIGHTS = 8;
+
+struct Light {
+    vec4 positionRadius;
+    vec4 colorInner;
+    vec4 directionOuter;
+};
+
 layout(set = 0, binding = 0) uniform FrameData {
     mat4 view;
     mat4 proj;
     vec4 cameraPos;
-    float time;
-    float _p0;
-    float _p1;
-    float _p2;
+    vec4 misc;        // x = time, y = dynamic light count
+    vec4 sunDir;      // xyz = direction TOWARD the sun
+    vec4 sunColor;    // rgb = color * intensity
+    vec4 ambient;
+    vec4 fogColor;    // rgb
+    vec4 fogParams;   // x = start, y = end (end <= start disables fog)
+    Light lights[MAX_LIGHTS];
 } frame;
 
 layout(set = 1, binding = 0) uniform sampler2D uBaseColor;
 layout(set = 1, binding = 1) uniform sampler2D uNormal;
-layout(set = 1, binding = 2) uniform sampler2D uMetalRough;
-layout(set = 1, binding = 3) uniform sampler2D uOcclusion;
 layout(set = 1, binding = 4) uniform sampler2D uEmissive;
 
 layout(push_constant) uniform Push {
     mat4 model;
     vec4 baseColor;
     vec4 emissive;
-    float metallic;
+    float metallic;   // unused by this shader, kept so the push layout stays shared
     float roughness;
     float alphaCutoff;
     uint flags;
@@ -34,10 +43,10 @@ layout(push_constant) uniform Push {
 
 const uint FLAG_NORMAL_MAP = 1u;
 const uint FLAG_ALPHA_MASK = 2u;
-const float PI = 3.14159265;
+const uint FLAG_UNLIT = 4u;
+const uint FLAG_NO_FOG = 8u;
 
 // Tangent frame from screen-space derivatives (no vertex tangents needed).
-// If bumps look inverted, flip the sign of B.
 vec3 applyNormalMap(vec3 N) {
     vec3 tn = texture(uNormal, vUV).xyz * 2.0 - 1.0;
     vec3 q1 = dFdx(vWorldPos);
@@ -50,42 +59,51 @@ vec3 applyNormalMap(vec3 N) {
 }
 
 void main() {
+    // Baked lighting from Blender lives in the vertex color and multiplies the texture here.
     vec4 base = texture(uBaseColor, vUV) * pc.baseColor * vec4(vColor, 1.0);
     if ((pc.flags & FLAG_ALPHA_MASK) != 0u && base.a < pc.alphaCutoff) discard;
 
-    vec3 N = normalize(vNormal);
-    if (!gl_FrontFacing) N = -N; // double-sided materials
-    if ((pc.flags & FLAG_NORMAL_MAP) != 0u) N = applyNormalMap(N);
-
-    vec3 mr = texture(uMetalRough, vUV).rgb; // glTF: G = roughness, B = metallic
-    float roughness = clamp(pc.roughness * mr.g, 0.05, 1.0);
-    float metallic = clamp(pc.metallic * mr.b, 0.0, 1.0);
-    float ao = texture(uOcclusion, vUV).r;
     vec3 emissive = texture(uEmissive, vUV).rgb * pc.emissive.rgb;
+    vec3 color;
 
-    vec3 V = normalize(frame.cameraPos.xyz - vWorldPos);
-    vec3 L = normalize(vec3(0.4, 1.0, 0.3));
-    vec3 H = normalize(V + L);
-    float NdotL = max(dot(N, L), 0.0);
-    float NdotV = max(dot(N, V), 1e-4);
-    float NdotH = max(dot(N, H), 0.0);
-    float VdotH = max(dot(V, H), 0.0);
+    if ((pc.flags & FLAG_UNLIT) != 0u) {
+        color = base.rgb + emissive;
+    } else {
+        vec3 N = normalize(vNormal);
+        if (!gl_FrontFacing) N = -N;
+        if ((pc.flags & FLAG_NORMAL_MAP) != 0u) N = applyNormalMap(N);
 
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float d = NdotH * NdotH * (a2 - 1.0) + 1.0;
-    float D = a2 / (PI * d * d);
-    float k = (roughness + 1.0) * (roughness + 1.0) / 8.0;
-    float G = (NdotL / (NdotL * (1.0 - k) + k)) * (NdotV / (NdotV * (1.0 - k) + k));
-    vec3 F0 = mix(vec3(0.04), base.rgb, metallic);
-    vec3 F = F0 + (1.0 - F0) * pow(1.0 - VdotH, 5.0);
+        vec3 light = frame.ambient.rgb + frame.sunColor.rgb * max(dot(N, frame.sunDir.xyz), 0.0);
 
-    vec3 specular = D * G * F / (4.0 * NdotV * max(NdotL, 1e-4));
-    vec3 diffuse = (1.0 - F) * (1.0 - metallic) * base.rgb / PI;
-    vec3 radiance = vec3(3.0);
+        int count = min(int(frame.misc.y), MAX_LIGHTS);
+        for (int i = 0; i < count; ++i) {
+            Light L = frame.lights[i];
+            vec3 toLight = L.positionRadius.xyz - vWorldPos;
+            float dist = length(toLight);
+            float radius = L.positionRadius.w;
+            if (dist >= radius) continue;
 
-    vec3 ambient = 0.3 * ao * (base.rgb * (1.0 - metallic) + F0 * 0.5);
-    vec3 color = (diffuse + specular) * radiance * NdotL + ambient + emissive;
-    color = color / (color + 1.0); // Reinhard; the sRGB swapchain encodes on write
-    outColor = vec4(color, 1.0);
+            vec3 dir = toLight / dist;
+            float att = 1.0 - dist / radius; // smooth: reaches exactly 0 at the radius
+            att *= att;
+
+            float spot = 1.0;
+            float cosOuter = L.directionOuter.w;
+            if (cosOuter > -1.0) { // spot light
+                float c = dot(-dir, L.directionOuter.xyz);
+                spot = smoothstep(cosOuter, L.colorInner.w, c);
+            }
+            light += L.colorInner.rgb * max(dot(N, dir), 0.0) * att * spot;
+        }
+        color = base.rgb * light + emissive;
+    }
+
+    // Linear distance fog, the classic way to hide draw distance.
+    if ((pc.flags & FLAG_NO_FOG) == 0u && frame.fogParams.y > frame.fogParams.x) {
+        float d = length(frame.cameraPos.xyz - vWorldPos);
+        float f = clamp((d - frame.fogParams.x) / (frame.fogParams.y - frame.fogParams.x), 0.0, 1.0);
+        color = mix(color, frame.fogColor.rgb, f);
+    }
+
+    outColor = vec4(color, base.a); // the sRGB swapchain encodes on write; no tonemapping needed
 }

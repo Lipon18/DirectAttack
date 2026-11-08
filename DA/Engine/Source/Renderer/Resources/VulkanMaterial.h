@@ -13,6 +13,8 @@ namespace DA {
     struct MaterialParams {
         static constexpr uint32_t FlagNormalMap = 1u;
         static constexpr uint32_t FlagAlphaMask = 2u;
+        static constexpr uint32_t FlagUnlit = 4u;
+        static constexpr uint32_t FlagNoFog = 8u;
 
         glm::vec4 BaseColor{1.0f};
         glm::vec4 Emissive{0.0f};
@@ -37,5 +39,6 @@ namespace DA {
         VkDescriptorSet Set = VK_NULL_HANDLE;
         MaterialParams Params;
         bool DoubleSided = false;
+        bool Blend = false;
     };
 } // namespace DA

@@ -17,6 +17,17 @@ namespace DA {
             for (uint32_t i : {0u, 1u, 2u, 2u, 3u, 0u})
                 mesh.Indices.push_back(base + i);
         }
+
+        void AddVertex(MeshData& mesh, const glm::vec3& position, const glm::vec3& normal, const glm::vec2& uv,
+            const glm::vec3& color) {
+            mesh.Vertices.push_back({position, normal, uv, color});
+        }
+
+        void AddTriangle(MeshData& mesh, uint32_t a, uint32_t b, uint32_t c) {
+            mesh.Indices.push_back(a);
+            mesh.Indices.push_back(b);
+            mesh.Indices.push_back(c);
+        }
     } // namespace
     MeshData MakeCube(float h) {
         MeshData mesh;

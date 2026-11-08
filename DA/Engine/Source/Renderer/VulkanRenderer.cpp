@@ -32,14 +32,20 @@ namespace DA {
     };
 
     namespace {
-        // Must match FrameData in Lit.vert/.frag (std140, 160 bytes).
+        // Must match FrameData in Lit.frag (std140, 624 bytes).
         struct FrameUniforms {
             glm::mat4 View;
             glm::mat4 Proj;
             glm::vec4 CameraPos;
-            float Time;
-            float Pad[3];
+            glm::vec4 Misc;   // x = time, y = dynamic light count
+            glm::vec4 SunDir; // direction TOWARD the sun
+            glm::vec4 SunColor;
+            glm::vec4 Ambient;
+            glm::vec4 FogColor;
+            glm::vec4 FogParams; // x = start, y = end
+            GpuLight Lights[MaxDynamicLights];
         };
+        static_assert(sizeof(FrameUniforms) == 624);
 
         // Must match Push in Lit.vert/.frag (112 bytes).
         struct PushConstants {
@@ -53,6 +59,7 @@ namespace DA {
         };
         static_assert(sizeof(PushConstants) == 112);
 
+        // Must match Push in skybox.frag (scalars in the shader, because a vec2 would be 8-byte aligned there).
         struct SkyboxPushConstants {
             glm::vec4 BaseColor;
             glm::vec4 FogColor;
@@ -151,6 +158,7 @@ namespace DA {
         return renderer;
     }
 
+    // Synchronous texture path, used by CreateModel.
     std::shared_ptr<VulkanImage> VulkanRenderer::LoadTexture(const ImageSourceData& source, bool srgb) {
         // 1. KTX2: embedded in the glTF, given directly, or a sidecar next to the source image.
         std::optional<TextureData> tex;
@@ -194,7 +202,7 @@ namespace DA {
         m_requestedWidth = m_swapchain.GetExtent().width;
         m_requestedHeight = m_swapchain.GetExtent().height;
 
-        // Texture + sampler (stb gives RGBA, so the format is R8G8B8A8_SRGB).
+        // Default texture + sampler (stb gives RGBA, so the format is R8G8B8A8_SRGB).
         std::optional<Bitmap> image = Bitmap::FromFile(Paths::ResolveEngine("Textures/Vulkan_Logo.png"));
         if (!image) {
             DA_WARN("Using the checkerboard fallback texture.");
@@ -209,7 +217,7 @@ namespace DA {
         m_whiteTexture = VulkanImage::CreateTexture2D(m_device, m_allocator, VK_FORMAT_R8G8B8A8_UNORM, 1, 1, white);
         if (!m_whiteTexture) return false;
 
-        // Depth image (created before the pipeline, which needs its format).
+        // Depth image (created before the pipelines, which need its format).
         m_depth = VulkanImage::CreateDepth(m_device, m_allocator, m_swapchain.GetExtent().width,
                                            m_swapchain.GetExtent().height);
         if (!m_depth) return false;
@@ -239,9 +247,8 @@ namespace DA {
             WriteUniformBufferDescriptor(m_device, frame.Set, 0, frame.Uniform->GetHandle(), sizeof(FrameUniforms));
         }
 
+        // Lit pipelines: [blend * 2 + doubleSided].
         VulkanGraphicsPipelineDesc pipelineDesc;
-        /*pipelineDesc.VertexShader = Paths::ResolveShader("Slang/Lit.vert");
-        pipelineDesc.FragmentShader = Paths::ResolveShader("Slang/Lit.frag");*/
         pipelineDesc.Language = EShaderLanguage::ESL_GLSL;
         pipelineDesc.VertexShader = "lit.vert";
         pipelineDesc.FragmentShader = "lit.frag";
@@ -253,10 +260,14 @@ namespace DA {
         pipelineDesc.PushConstants = {
             {VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0, sizeof(PushConstants)}};
         pipelineDesc.SetLayouts = {m_setLayout->GetHandle(), m_materialLayout->GetHandle()};
-        m_cubePipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
-        pipelineDesc.CullMode = VK_CULL_MODE_NONE;
-        m_doubleSidedPipeline = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
-        if (!m_cubePipeline || !m_doubleSidedPipeline) return false;
+        for (uint32_t i = 0; i < m_litPipelines.size(); ++i) {
+            const bool blend = (i & 2) != 0;
+            pipelineDesc.CullMode = (i & 1) ? VK_CULL_MODE_NONE : VK_CULL_MODE_BACK_BIT;
+            pipelineDesc.BlendEnable = blend;
+            pipelineDesc.DepthWrite = !blend; // transparent surfaces test depth but never write it
+            m_litPipelines[i] = VulkanGraphicsPipeline::Create(m_device, pipelineDesc);
+            if (!m_litPipelines[i]) return false;
+        }
 
         // Default material: the logo texture, so cubes/planes and untextured models still draw.
         MaterialParams defaultParams;
@@ -345,12 +356,18 @@ namespace DA {
         return VulkanMesh::Create(m_device, m_allocator, data.Vertices, data.Indices);
     }
 
+    std::shared_ptr<VulkanCubeMap> VulkanRenderer::CreateCubeMap(const CubeMapFaces& faces) const {
+        return VulkanCubeMap::Create(m_device, m_allocator, faces);
+    }
+
     std::unique_ptr<VulkanMaterial> VulkanRenderer::CreateMaterial(
         const MaterialParams& params,
-        const std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount>& textures, bool doubleSided) {
+        const std::array<std::shared_ptr<VulkanImage>, VulkanMaterial::SlotCount>& textures, bool doubleSided,
+        bool blend) {
         auto material = std::make_unique<VulkanMaterial>();
         material->Params = params;
         material->DoubleSided = doubleSided;
+        material->Blend = blend;
         material->Set = AllocateMaterialSet();
         if (material->Set == VK_NULL_HANDLE) return nullptr;
         for (uint32_t i = 0; i < VulkanMaterial::SlotCount; ++i) {
@@ -386,10 +403,10 @@ namespace DA {
             p.Roughness = md.Roughness;
             p.AlphaCutoff = md.AlphaCutoff;
             if (tex[VulkanMaterial::Normal]) p.Flags |= MaterialParams::FlagNormalMap;
-            // Blend is approximated by a cutout until there is a transparent pass.
-            if (md.Alpha != EAlphaMode::EAM_OPAQUE) p.Flags |= MaterialParams::FlagAlphaMask;
+            if (md.Alpha == EAlphaMode::EAM_MASK) p.Flags |= MaterialParams::FlagAlphaMask;
+            const bool blend = (md.Alpha == EAlphaMode::EAM_BLEND);
 
-            auto material = CreateMaterial(p, tex, md.DoubleSided);
+            auto material = CreateMaterial(p, tex, md.DoubleSided, blend);
             if (!material) return nullptr;
             materials.push_back(std::move(material));
         }
@@ -398,10 +415,14 @@ namespace DA {
 
     bool VulkanRenderer::RenderFrame(uint32_t width, uint32_t height) {
         // Whatever happens below (early return, minimize, error), this frame's submissions are discarded.
-        struct DrawListReset {
+        struct FrameSubmissionReset {
             std::vector<DrawItem>& List;
-            ~DrawListReset() { List.clear(); }
-        } drawListReset{m_drawList};
+            std::vector<GpuLight>& Lights;
+            ~FrameSubmissionReset() {
+                List.clear();
+                Lights.clear();
+            }
+        } submissionReset{m_drawList, m_lights};
 
         ProcessUploads(); // drain worker results and run the budgeted GPU uploads
 
@@ -464,13 +485,8 @@ namespace DA {
         return true;
     }
 
-    std::shared_ptr<VulkanCubeMap> VulkanRenderer::CreateCubeMap(const CubeMapFaces& faces) const {
-        return VulkanCubeMap::Create(m_device, m_allocator, faces);
-    }
-
     void VulkanRenderer::SetSkybox(std::unique_ptr<SkyboxMaterial> material) {
-        // Descriptor updates and resource replacement must not race
-        // with frames currently using the old cubemap.
+        // Descriptor updates and resource replacement must not race with frames using the old cubemap.
         m_device.WaitIdle();
         m_skybox = std::move(material);
         if (!m_skybox || !m_skybox->GetImage()) return;
@@ -535,15 +551,33 @@ namespace DA {
         Frame& frame = m_frames[m_frameIndex];
         const float t = static_cast<float>(m_clock.GetElapsedSeconds());
         const float aspect = static_cast<float>(extent.width) / static_cast<float>(extent.height);
+        const glm::vec3 camPos = m_camera.GetPosition();
 
+        // Keep the nearest lights (by distance to the camera).
+        auto dist2 = [&](const GpuLight& l) {
+            const glm::vec3 d = glm::vec3(l.PositionRadius) - camPos;
+            return glm::dot(d, d);
+        };
+        const size_t lightCount = std::min<size_t>(m_lights.size(), MaxDynamicLights);
+        std::partial_sort(m_lights.begin(), m_lights.begin() + lightCount, m_lights.end(),
+                          [&](const GpuLight& a, const GpuLight& b) { return dist2(a) < dist2(b); });
+
+        const Environment& env = m_environment;
         FrameUniforms uniforms{};
         uniforms.View = m_camera.GetViewMatrix();
         uniforms.Proj = m_camera.GetProjectionMatrix(aspect);
-        uniforms.Time = t;
-        uniforms.CameraPos = glm::vec4(m_camera.GetPosition(), 1.0f);
+        uniforms.CameraPos = glm::vec4(camPos, 1.0f);
+        uniforms.Misc = glm::vec4(t, static_cast<float>(lightCount), 0.0f, 0.0f);
+        uniforms.SunDir = glm::vec4(-glm::normalize(env.Sun.Direction), 0.0f);
+        uniforms.SunColor = glm::vec4(env.Sun.Color * env.Sun.Intensity, 0.0f);
+        uniforms.Ambient = glm::vec4(env.Ambient, 0.0f);
+        uniforms.FogColor = glm::vec4(env.Fog.Color, 1.0f);
+        uniforms.FogParams = env.Fog.Enabled ? glm::vec4(env.Fog.Start, env.Fog.End, 0.0f, 0.0f) : glm::vec4(0.0f);
+        for (size_t i = 0; i < lightCount; ++i)
+            uniforms.Lights[i] = m_lights[i];
         frame.Uniform->Write(&uniforms, sizeof(uniforms));
 
-        // Skybox first (no vertex buffer: a fullscreen triangle).
+        // Skybox first (no vertex buffer: a fullscreen triangle, no depth test or write).
         if (m_skybox && m_skybox->GetImage() && m_skyboxPipeline) {
             m_skyboxPipeline->Bind(cmd);
             // Set 0: frame uniforms.
@@ -559,16 +593,22 @@ namespace DA {
             vkCmdDraw(cmd, 3, 1, 0, 0);
         }
 
-        // Normal geometry pass. Set 0 uses the same layout in both lit pipelines, so one bind covers both.
-        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_cubePipeline->GetLayout(), 0, 1, &frame.Set, 0,
-                                nullptr);
+        // Geometry. The skybox layout has different push constants, so set 0 must be bound again here.
+        // Set 0 has the same layout in all lit pipelines, so one bind covers them.
+        vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, m_litPipelines[0]->GetLayout(), 0, 1, &frame.Set,
+                                0, nullptr);
+
+        struct Visible {
+            const DrawItem* Item;
+            const VulkanMaterial* Mat;
+            uint32_t Pipeline;
+            float Dist2; // camera to object center, used for blended sorting
+        };
+        std::vector<Visible> opaque, blended;
+        opaque.reserve(m_drawList.size());
 
         const Frustum frustum = Frustum::FromViewProj(uniforms.Proj * uniforms.View);
         m_lastDrawn = m_lastCulled = 0;
-
-        const VulkanGraphicsPipeline* boundPipeline = nullptr;
-        const VulkanMaterial* boundMaterial = nullptr;
-        const VulkanMesh* boundMesh = nullptr;
         for (const DrawItem& item : m_drawList) {
             if (!item.Mesh) continue;
             if (!frustum.Intersects(item.Mesh->GetBounds(), item.Model)) {
@@ -576,29 +616,52 @@ namespace DA {
                 continue;
             }
             ++m_lastDrawn;
+            const VulkanMaterial* mat = item.Material ? item.Material : m_defaultMaterial.get();
+            const uint32_t pipeline = (mat->Blend ? 2u : 0u) + (mat->DoubleSided ? 1u : 0u);
+            const glm::vec3 center = glm::vec3(item.Model * glm::vec4(item.Mesh->GetBounds().Center(), 1.0f));
+            const glm::vec3 d = center - camPos;
+            const Visible v{&item, mat, pipeline, glm::dot(d, d)};
+            (mat->Blend ? blended : opaque).push_back(v);
+        }
 
-            const auto* mat = item.Material ? item.Material : m_defaultMaterial.get();
-            const auto* pipeline = mat->DoubleSided ? m_doubleSidedPipeline.get() : m_cubePipeline.get();
-            if (pipeline != boundPipeline) {
+        // Opaque and alpha-tested: group by pipeline, material, mesh to minimize state changes.
+        std::sort(opaque.begin(), opaque.end(), [](const Visible& a, const Visible& b) {
+            if (a.Pipeline != b.Pipeline) return a.Pipeline < b.Pipeline;
+            if (a.Mat != b.Mat) return a.Mat < b.Mat;
+            return a.Item->Mesh < b.Item->Mesh;
+        });
+        // Blended: back to front.
+        std::sort(blended.begin(), blended.end(), [](const Visible& a, const Visible& b) { return a.Dist2 > b.Dist2; });
+
+        uint32_t boundPipeline = UINT32_MAX;
+        const VulkanMaterial* boundMaterial = nullptr;
+        const VulkanMesh* boundMesh = nullptr;
+        auto draw = [&](const Visible& v) {
+            const VulkanGraphicsPipeline* pipeline = m_litPipelines[v.Pipeline].get();
+            if (v.Pipeline != boundPipeline) {
                 pipeline->Bind(cmd);
-                boundPipeline = pipeline;
+                boundPipeline = v.Pipeline;
             }
-            if (mat != boundMaterial) {
-                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->GetLayout(), 1, 1, &mat->Set, 0,
-                                        nullptr);
-                boundMaterial = mat;
+            if (v.Mat != boundMaterial) {
+                vkCmdBindDescriptorSets(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline->GetLayout(), 1, 1, &v.Mat->Set,
+                                        0, nullptr);
+                boundMaterial = v.Mat;
             }
-            const auto& mp = mat->Params;
-            const PushConstants push{item.Model,   mp.BaseColor,   mp.Emissive, mp.Metallic,
-                                     mp.Roughness, mp.AlphaCutoff, mp.Flags};
+            const MaterialParams& mp = v.Mat->Params;
+            const PushConstants push{v.Item->Model, mp.BaseColor,   mp.Emissive, mp.Metallic,
+                                     mp.Roughness,  mp.AlphaCutoff, mp.Flags};
             vkCmdPushConstants(cmd, pipeline->GetLayout(), VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 0,
                                sizeof(push), &push);
-            if (item.Mesh != boundMesh) {
-                item.Mesh->Bind(cmd);
-                boundMesh = item.Mesh;
+            if (v.Item->Mesh != boundMesh) {
+                v.Item->Mesh->Bind(cmd);
+                boundMesh = v.Item->Mesh;
             }
-            item.Mesh->Draw(cmd);
-        }
+            v.Item->Mesh->Draw(cmd);
+        };
+        for (const Visible& v : opaque)
+            draw(v);
+        for (const Visible& v : blended)
+            draw(v);
 
         vkCmdEndRendering(cmd);
 
@@ -768,9 +831,10 @@ namespace DA {
                 p.Roughness = md.Roughness;
                 p.AlphaCutoff = md.AlphaCutoff;
                 if (tex[VulkanMaterial::Normal]) p.Flags |= MaterialParams::FlagNormalMap;
-                if (md.Alpha != EAlphaMode::EAM_OPAQUE) p.Flags |= MaterialParams::FlagAlphaMask;
+                if (md.Alpha == EAlphaMode::EAM_MASK) p.Flags |= MaterialParams::FlagAlphaMask;
+                const bool blend = (md.Alpha == EAlphaMode::EAM_BLEND);
 
-                auto material = CreateMaterial(p, tex, md.DoubleSided);
+                auto material = CreateMaterial(p, tex, md.DoubleSided, blend);
                 if (!material) return fail("material creation failed");
                 job.Materials.push_back(std::move(material));
             }
